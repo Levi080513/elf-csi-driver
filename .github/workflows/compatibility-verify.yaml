@@ -1,0 +1,41 @@
+name: compatibility-verify
+
+on:
+  pull_request:
+    branches: [master]
+
+jobs:
+  k8s1-22-compatibility-verify:
+    uses: iomesh/csi-driver/.github/workflows/compatibility-verify-template.yaml@master
+    with:
+      kubeVersion: "k8s-1.22"
+    secrets:
+      zbs-cluster-vip: ${{ secrets.E2E_ZBS_CLUSTER_VIP }}
+
+  k8s1-16-compatibility-verify:
+    uses: iomesh/csi-driver/.github/workflows/compatibility-verify-template.yaml@master
+    with:
+      kubeVersion: "k8s-1.16"
+    secrets:
+      zbs-cluster-vip: ${{ secrets.E2E_ZBS_CLUSTER_VIP }}
+
+  k8s1-15-compatibility-verify:
+    uses: iomesh/csi-driver/.github/workflows/compatibility-verify-template.yaml@master
+    with:
+      kubeVersion: "k8s-1.15"
+    secrets:
+      zbs-cluster-vip: ${{ secrets.E2E_ZBS_CLUSTER_VIP }}
+
+  k8s1-14-compatibility-verify:
+    uses: iomesh/csi-driver/.github/workflows/compatibility-verify-template.yaml@master
+    with:
+      kubeVersion: "k8s-1.14"
+    secrets:
+      zbs-cluster-vip: ${{ secrets.E2E_ZBS_CLUSTER_VIP }}
+
+  k8s1-13-compatibility-verify:
+    uses: iomesh/csi-driver/.github/workflows/compatibility-verify-template.yaml@master
+    with:
+      kubeVersion: "k8s-1.13"
+    secrets:
+      zbs-cluster-vip: ${{ secrets.E2E_ZBS_CLUSTER_VIP }}

@@ -1,0 +1,10 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: smtx-csi-driver-delete
+parameters:
+  csi.storage.k8s.io/fstype: ext4
+  replicaFactor: "2"
+  thinProvision: "true"
+provisioner: com.smartx.csi-driver
+reclaimPolicy: Delete

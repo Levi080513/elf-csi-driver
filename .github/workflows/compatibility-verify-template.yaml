@@ -1,0 +1,54 @@
+name: compatibility verify template
+
+on:
+  workflow_call:
+    inputs:
+      kubeVersion:
+        required: true
+        type: string
+    secrets:
+      zbs-cluster-vip:
+        required: true
+
+jobs:
+  job:
+    runs-on: ${{ inputs.kubeVersion }}
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ^1.17
+        id: go
+
+      - name: Configure git for private modules
+        env:
+          TOKEN: ${{ secrets.IOMESH_ROBOT_ACCESS_TOKEN }}
+          USERNAME: ${{ secrets.IOMESH_ROBOT_USERNAME }}
+        run: git config --global url."https://${USERNAME}:${TOKEN}@github.com".insteadOf "https://github.com"
+
+      - name: build image
+        run: make docker-save && docker tag iomesh/csi-driver:latest iomesh/csi-driver:$(helm show chart deploy/csi-driver/ | grep appVersion | awk '{print $2}')
+        env:
+          LATEST: true
+
+      - name: clean up
+        timeout-minutes: 5
+        run: | 
+          # clean up all ns which create by csi e2e test
+          for ns in $(kubectl get ns -o jsonpath="{.items[*].metadata.name}" | xargs -n1 | egrep -v "kube-system|kube-public|default|iomesh-system");
+          do
+            kubectl delete ns $ns
+          done
+          kubectl delete pv --all -A || true
+          helm uninstall csi-driver -n iomesh-system || true
+
+      - name: deploy csi
+        shell: bash
+        env:
+          ZBS_CLUSTER_VIP: ${{ secrets.zbs-cluster-vip }}
+        run: helm install csi-driver deploy/csi-driver -n iomesh-system --create-namespace --set driver.metaAddr=${ZBS_CLUSTER_VIP}:10206,driver.iscsiPortal=${ZBS_CLUSTER_VIP}:3260,deploymentMode=EXTERNAL,driver.controller.replicas=1
+
+      - name: run e2e test
+        shell: bash
+        run: tests/external-e2e/run.sh

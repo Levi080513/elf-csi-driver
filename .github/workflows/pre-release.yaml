@@ -1,0 +1,43 @@
+name: pre-release
+
+on:
+  release:
+    types: [prereleased]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    name: release
+    steps:
+      - uses: actions/checkout@v2
+      - name: Configure git for private modules
+        env:
+          TOKEN: ${{ secrets.IOMESH_ROBOT_ACCESS_TOKEN }}
+          USERNAME: ${{ secrets.IOMESH_ROBOT_USERNAME }}
+        run: git config --global url."https://${USERNAME}:${TOKEN}@github.com".insteadOf "https://github.com"
+
+      - name: build & push
+        run: make docker-push
+        env:
+          IMAGE_REPO: docker.io
+          IMAGE_PUSH_USERNAME: ${{ secrets.IOMESH_DOCKERHUB_USERNAME }}
+          IMAGE_PUSH_TOKEN: ${{ secrets.IOMESH_DOCKERHUB_TOKEN }}
+          IMAGE_PREFIX: iomesh/
+          LATEST: "false"
+
+      - name: Notify slack success
+        if: success()
+        uses: rtCamp/action-slack-notify@master
+        env:
+          SLACK_COLOR: good
+          SLACK_TITLE: New Release Published
+          SLACK_MESSAGE: <${{ github.event.release.html_url }}|${{ github.event.release.tag_name }}>
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+      - name: Notify slack fail
+        if: failure()
+        uses: rtCamp/action-slack-notify@master
+        env:
+          SLACK_COLOR: danger
+          SLACK_TITLE: Failed workflow
+          SLACK_MESSAGE: <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|${{ github.event.release.tag_name }} failed workflow>
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}

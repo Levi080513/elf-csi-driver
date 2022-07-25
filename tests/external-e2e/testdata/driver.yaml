@@ -1,0 +1,12 @@
+StorageClass:
+  FromFile: /tmp/csi/storageclass.yaml
+SnapshotClass:
+  FromFile: /tmp/csi/snapshotclass.yaml
+DriverInfo:
+  Name: com.smartx.csi-driver
+  RequiredAccessModes:
+  - ReadWriteOnce
+  Capabilities:
+    persistence: true
+    block: true
+    # TODO(ziyin): add more Capabilities for different k8s version use golang yaml template

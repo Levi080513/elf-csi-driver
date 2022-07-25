@@ -1,0 +1,51 @@
+name: periodic-run-e2e-test
+
+on:
+  schedule:
+    - cron:  '0 * * * *'
+
+jobs:
+  build-and-run-e2e-test:
+    runs-on: iomesh-dogfood
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ^1.14
+        id: go
+      - name: Configure git for private modules
+        env:
+          TOKEN: ${{ secrets.IOMESH_ROBOT_ACCESS_TOKEN }}
+          USERNAME: ${{ secrets.IOMESH_ROBOT_USERNAME }}
+        run: git config --global url."https://${USERNAME}:${TOKEN}@github.com".insteadOf "https://github.com"
+
+      - name: build
+        run: go test -c -o e2e.test ./tests/e2e
+
+      - name: run
+        run: DRIVER_NAME=com.iomesh.iomesh-csi-driver ./e2e.test -ginkgo.skip="Disruptive|custom|auth" | tee /tmp/e2e-output.log
+
+      - name: upload e2e logs
+        if: always()
+        uses: actions/upload-artifact@master
+        with:
+          name: e2e-logs
+          path: /tmp/e2e-output.log
+          retention-days: 5
+
+      - name: Notify slack success
+        if: success()
+        uses: rtCamp/action-slack-notify@master
+        env:
+          SLACK_COLOR: good
+          SLACK_MESSAGE: "periodic run csi e2e test pass."
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+
+      - name: Notify slack fail
+        if: failure()
+        uses: rtCamp/action-slack-notify@master
+        env:
+          SLACK_COLOR: danger
+          SLACK_MESSAGE: "periodic run csi e2e test fail."
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
