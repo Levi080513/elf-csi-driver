@@ -1,9 +1,9 @@
 apiVersion: v2
-name: csi-driver
-home: http://iomesh.com
+name: elf-csi-driver
+home: https://smartx.com
 description: |
-  The IOMesh Container Storage Interface CSI Driver provides a CSI interface
-  used by Container Orchestrators to manage the lifecycle of IOMesh volumes.
+  The Elf Container Storage Interface CSI Driver provides a CSI interface
+  used by Container Orchestrators to manage the lifecycle of Elf VM volumes.
 
 # A chart can be either an 'application' or a 'library' chart.
 #

@@ -11,7 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/kubernetes/test/e2e/framework"
 
-	"github.com/iomesh/csi-driver/pkg/testing/utils"
+	"github.com/smartxworks/elf-csi-driver/pkg/testing/utils"
 )
 
 const (

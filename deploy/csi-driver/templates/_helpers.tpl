@@ -14,7 +14,7 @@ If release name contains chart name it will be used as a full name.
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else -}}
-smtx-{{ default .Chart.Name .Values.nameOverride }}
+smtx-elf-{{ default .Chart.Name .Values.nameOverride }}
 {{- end }}
 {{- end }}
 
@@ -184,7 +184,7 @@ csi-driver storageClass name
 {{- if .Values.storageClass.nameOverride }}
 {{- .Values.storageClass.nameOverride }}
 {{- else -}}
-smtx-{{include "csi-driver.name" .}}
+smtx-elf-{{include "csi-driver.name" .}}
 {{- end }}
 {{- end }}
 
@@ -192,6 +192,6 @@ smtx-{{include "csi-driver.name" .}}
 {{- if .Values.driver.nameOverride }}
 {{- .Values.driver.nameOverride }}
 {{- else -}}
-com.smartx.{{ include "csi-driver.name" . }}
+com.smartx.elf-{{ include "csi-driver.name" . }}
 {{- end }}
 {{- end }}

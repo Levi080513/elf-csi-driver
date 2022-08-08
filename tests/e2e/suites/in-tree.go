@@ -11,7 +11,7 @@ import (
 	storageframework "k8s.io/kubernetes/test/e2e/storage/framework"
 	"k8s.io/kubernetes/test/e2e/storage/testsuites"
 
-	"github.com/iomesh/csi-driver/tests/e2e/driver"
+	"github.com/smartxworks/elf-csi-driver/tests/e2e/driver"
 )
 
 var CSITestSuites = []func() storageframework.TestSuite{

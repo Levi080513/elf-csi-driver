@@ -23,7 +23,7 @@ import (
 	frameworkconfig "k8s.io/kubernetes/test/e2e/framework/config"
 	e2ereporters "k8s.io/kubernetes/test/e2e/reporters"
 
-	_ "github.com/iomesh/csi-driver/tests/e2e/suites"
+	_ "github.com/smartxworks/elf-csi-driver/tests/e2e/suites"
 )
 
 const kubeconfigEnvVar = "KUBECONFIG"
