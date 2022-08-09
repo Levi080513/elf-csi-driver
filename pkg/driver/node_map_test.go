@@ -12,7 +12,7 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	kmetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/iomesh/csi-driver/pkg/utils"
+	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 )
 
 const (

@@ -22,8 +22,8 @@ import (
 	"k8s.io/klog"
 
 	httptransport "github.com/go-openapi/runtime/client"
-	"github.com/iomesh/csi-driver/pkg/driver"
-	"github.com/iomesh/csi-driver/pkg/utils"
+	"github.com/smartxworks/elf-csi-driver/pkg/driver"
+	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 	towerclient "github.com/smartxworks/cloudtower-go-sdk/v2/client"
 )
 
@@ -33,7 +33,7 @@ const (
 
 var (
 	csiAddr        = flag.String("csi_addr", "", "csi server addr")
-	driverName     = flag.String("driver_name", "com.iomesh.iomesh", "driver name")
+	driverName     = flag.String("driver_name", "com.smartx.elf-csi-driver", "driver name")
 	role           = flag.String("role", "node", "plugin role: controller / node / all")
 	livenessPort   = flag.Int("liveness_port", -1, "node plugin livness port")
 	namespace      = flag.String("namespace", "default", "k8s resource namespace used by driver")

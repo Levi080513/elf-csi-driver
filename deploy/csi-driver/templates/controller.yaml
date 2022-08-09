@@ -46,14 +46,9 @@ spec:
             - --csi_addr=unix:///csi/csi.sock
             - --driver_name={{- include "csi-driver.driver.name" .}}
             - --role=controller
-            # iomesh-cluster-vip:10206
-            - --meta_proxy={{ .Values.driver.metaAddr | default "iomesh-access.$(NAMESPACE).svc:10206" }}
-            # unique cluster id
-            - --cluster_id={{ .Values.driver.clusterID }}
-            # HCI / EXTERNAL
-            - --deployment_mode={{ .Values.driver.deploymentMode }}
             - --namespace=$(NAMESPACE)
             - --node_map={{ include "csi-driver.fullname" . }}-node-map
+            - --tower_host={{ .Values.driver.cloudTowerHost }}
             - --v=1
           volumeMounts:
             - name: socket-dir

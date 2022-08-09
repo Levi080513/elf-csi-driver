@@ -1,11 +1,11 @@
-module github.com/iomesh/csi-driver
+module github.com/smartxworks/elf-csi-driver
 
 go 1.14
 
 require (
 	github.com/container-storage-interface/spec v1.3.0
 	github.com/go-openapi/runtime v0.24.1
-	github.com/golang/protobuf v1.5.2
+	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/iomesh/operator v0.11.1
 	github.com/iomesh/zbs-client-go v1.2.3
 	github.com/kubernetes-csi/csi-test/v3 v3.1.1
@@ -19,7 +19,7 @@ require (
 	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a
 	google.golang.org/grpc v1.41.0
 	gopkg.in/yaml.v2 v2.4.0
-	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
+	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 	k8s.io/api v0.21.4
 	k8s.io/apimachinery v0.21.4
 	k8s.io/client-go v12.0.0+incompatible
@@ -28,7 +28,7 @@ require (
 	k8s.io/klog/v2 v2.8.0
 	k8s.io/kubernetes v1.21.3
 	k8s.io/utils v0.0.0-20210819203725-bdf08cb9a70a
-	sigs.k8s.io/controller-runtime v0.9.7
+	sigs.k8s.io/controller-runtime v0.9.7 // indirect
 )
 
 replace (

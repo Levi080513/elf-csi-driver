@@ -7,9 +7,9 @@ RUN apt-get update &&  apt-get install -y \
     git \
     musl-dev
 
-RUN mkdir -p /go/src/github.com/iomesh/csi-driver
+RUN mkdir -p /go/src/github.com/smartxworks/elf-csi-driver
 
-WORKDIR /go/src/github.com/iomesh/csi-driver
+WORKDIR /go/src/github.com/smartxworks/elf-csi-driver
 COPY . .
 
 RUN make && upx bin/csi-driver
@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y libkmod-dev libiscsi-dev \
     lsscsi \
     libisns0
 
-COPY --from=builder /go/src/github.com/iomesh/csi-driver/bin/csi-driver /usr/sbin/csi-driver
+COPY --from=builder /go/src/github.com/smartxworks/elf-csi-driver/bin/csi-driver /usr/sbin/csi-driver
 COPY scripts/csi-entrypoint.sh /usr/sbin/csi-entrypoint.sh
 
 WORKDIR /

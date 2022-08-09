@@ -3,7 +3,7 @@
 
 set -xe
 
-DRIVER="com.smartx.csi-driver"
+DRIVER="com.smartx.elf-csi-driver"
 KUBEVERSION=$(kubectl version | grep "Server Version" | grep -oP "GitVersion:\"\Kv[0-9]*\.[0-9]*").0
 KUBECONFIG="/root/.kube/config"
 

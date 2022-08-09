@@ -13,9 +13,9 @@ import (
 	kmetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/iomesh/csi-driver/pkg/driver"
-	"github.com/iomesh/csi-driver/pkg/testing/constant"
-	"github.com/iomesh/csi-driver/pkg/utils"
+	"github.com/smartxworks/elf-csi-driver/pkg/driver"
+	"github.com/smartxworks/elf-csi-driver/pkg/testing/constant"
+	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 )
 
 const (

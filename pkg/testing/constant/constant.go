@@ -5,5 +5,5 @@ package constant
 
 const (
 	SocketAddr = "unix:///tmp/csi.sock"
-	DriverName = "com.iomesh.csi-driver"
+	DriverName = "com.smartx.elf-csi-driver"
 )

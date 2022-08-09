@@ -12,9 +12,9 @@ import (
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/klog"
 
-	"github.com/iomesh/csi-driver/pkg/testing/constant"
-	"github.com/iomesh/csi-driver/pkg/testing/mockdriver"
-	"github.com/iomesh/csi-driver/pkg/testing/mockzbs"
+	"github.com/smartxworks/elf-csi-driver/pkg/testing/constant"
+	"github.com/smartxworks/elf-csi-driver/pkg/testing/mockdriver"
+	"github.com/smartxworks/elf-csi-driver/pkg/testing/mockzbs"
 )
 
 const (

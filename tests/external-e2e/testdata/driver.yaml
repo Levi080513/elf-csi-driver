@@ -3,7 +3,7 @@ StorageClass:
 SnapshotClass:
   FromFile: /tmp/csi/snapshotclass.yaml
 DriverInfo:
-  Name: com.smartx.csi-driver
+  Name: com.smartx.elf-csi-driver
   RequiredAccessModes:
   - ReadWriteOnce
   Capabilities:
