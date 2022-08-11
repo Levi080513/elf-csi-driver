@@ -6,6 +6,7 @@ package driver
 import (
 	"errors"
 	"fmt"
+	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
 	"net"
 	"net/url"
 	"os"
@@ -346,23 +347,23 @@ func isBlockDevice(volumePath string) (bool, error) {
 	return false, nil
 }
 
-func getVolumeFilesystemStats(volumePath string) (*volumeFilesystemStats, error) {
-	var statfs unix.Statfs_t
-	// See http://man7.org/linux/man-pages/man2/statfs.2.html for details.
-	err := unix.Statfs(volumePath, &statfs)
-	if err != nil {
-		return nil, err
+func getStoragePolicy(params map[string]string) (*models.VMVolumeElfStoragePolicyType, error) {
+	defaultStoragePolicy := models.VMVolumeElfStoragePolicyTypeREPLICA2THINPROVISION
+
+	spStr, ok := params[StoragePolicy]
+	if !ok {
+		return &defaultStoragePolicy, nil
 	}
-
-	stats := &volumeFilesystemStats{
-		availableBytes: int64(statfs.Bavail) * statfs.Bsize,
-		totalBytes:     int64(statfs.Blocks) * statfs.Bsize,
-		usedBytes:      (int64(statfs.Blocks) - int64(statfs.Bfree)) * statfs.Bsize,
-
-		availableInodes: int64(statfs.Ffree),
-		totalInodes:     int64(statfs.Files),
-		usedInodes:      int64(statfs.Files) - int64(statfs.Ffree),
+	sp := defaultStoragePolicy
+	switch spStr {
+	case "REPLICA_2_THIN_PROVISION":
+		sp = models.VMVolumeElfStoragePolicyTypeREPLICA2THINPROVISION
+	case "REPLICA_3_THIN_PROVISION":
+		sp = models.VMVolumeElfStoragePolicyTypeREPLICA3THINPROVISION
+	case "REPLICA_2_THICK_PROVISION":
+		sp = models.VMVolumeElfStoragePolicyTypeREPLICA2THICKPROVISION
+	case "REPLICA_3_THICK_PROVISION":
+		sp = models.VMVolumeElfStoragePolicyTypeREPLICA3THICKPROVISION
 	}
-
-	return stats, nil
+	return &sp, nil
 }

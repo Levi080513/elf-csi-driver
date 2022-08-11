@@ -24,6 +24,7 @@ const (
 	GB            = 1 << 30
 	ReplicaFactor = "replicaFactor"
 	ThinProvision = "thinProvision"
+	StoragePolicy = "storagePolicy"
 
 	defaultVolumeSize = 1 * GB
 	labelKeyName      = "k8s-cluster-id"
@@ -57,8 +58,14 @@ func (c *controllerServer) CreateVolume(
 		return nil, err
 	}
 
-	// TODO(tower): parameterization storagePolicy/elfClusterId/sharing in storageClass
-	vmVolume, err := c.createVmVolume("cl319n65m01le0758xguye0t3", volumeName, models.VMVolumeElfStoragePolicyTypeREPLICA2THINPROVISION, size, false)
+	// TODO(tower): parameterization sharing in storageClass
+	params := req.GetParameters()
+	clusterId := params["clusterId"]
+	sp, err := getStoragePolicy(params)
+	if err != nil {
+		return nil, err
+	}
+	vmVolume, err := c.createVmVolume(clusterId, volumeName, *sp, size, false)
 	if err != nil {
 		return nil, err
 	}
