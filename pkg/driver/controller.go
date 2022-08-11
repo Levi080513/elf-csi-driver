@@ -6,6 +6,7 @@ package driver
 import (
 	"context"
 	"fmt"
+	"k8s.io/utils/pointer"
 	"net"
 	"net/rpc"
 	"strings"
@@ -349,9 +350,75 @@ func (c *controllerServer) ListSnapshots(
 	return nil, status.Error(codes.Unimplemented, "unimplemented")
 }
 
-// TODO(tower): implement ControllerExpandVolume by tower sdk
 func (c *controllerServer) ControllerExpandVolume(
 	ctx context.Context,
 	req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
-	return nil, nil
+	volumeID := req.GetVolumeId()
+	if volumeID == "" {
+		return nil, status.Error(codes.InvalidArgument, "volume id is empty")
+	}
+
+	if req.GetCapacityRange() == nil {
+		return nil, status.Error(codes.InvalidArgument, "capacity range is empty")
+	}
+
+	if req.GetVolumeCapability() != nil {
+		err := checkVolumeCapabilities([]*csi.VolumeCapability{req.GetVolumeCapability()})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	newSize, err := getVolumeSize(req.GetCapacityRange())
+	if err != nil {
+		return nil, err
+	}
+
+	volume, err := c.getVolume(volumeID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal,
+			"failed to find volume %v, %v", volumeID, err)
+	}
+
+	uSize := uint64(*volume.Size)
+	if uSize < newSize {
+		err = c.expandVolume(volumeID, int64(newSize))
+		if err != nil {
+			return nil, status.Errorf(codes.Internal,
+				"failed to update volume %v size, %v", volumeID, err)
+		}
+	} else {
+		klog.Info("volume's the new size is not larger than the current size, request ignored, volume ID: %v", volumeID)
+	}
+
+	return &csi.ControllerExpandVolumeResponse{
+		CapacityBytes:         *volume.Size,
+		NodeExpansionRequired: true,
+	}, nil
+}
+
+// TODO(tower): re-use this function with node driver
+func (c *controllerServer) getVolume(volumeID string) (*models.VMVolume, error)  {
+	getVolumeParams := vmvolume.NewGetVMVolumesParams()
+	getVolumeParams.RequestBody = &models.GetVMVolumesRequestBody{
+		Where:  &models.VMVolumeWhereInput{
+			ID: pointer.String(volumeID),
+		},
+	}
+
+	getVolumeRes, err := c.config.TowerClient.VMVolume.GetVMVolumes(getVolumeParams)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(getVolumeRes.Payload) < 1 {
+		return nil, fmt.Errorf("unable to get volume with ID %v", volumeID)
+	}
+
+	return getVolumeRes.Payload[0], nil
+}
+
+// TODO(tower): impl this when sdk updated
+func (c *controllerServer) expandVolume(volumeID string, newSize int64) (error) {
+  return nil
 }
