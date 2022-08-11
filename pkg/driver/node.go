@@ -493,7 +493,6 @@ func (n *nodeServer) getVolumeDevice(volumeID string) (*string, error) {
 	getVmDiskParams.RequestBody = &models.GetVMDisksRequestBody{
 		Where: &models.VMDiskWhereInput{
 			VM: &models.VMWhereInput{
-				// TODO(tower): mapping node name to VM
 				Name: pointy.String(n.config.NodeID),
 			},
 			VMVolume: &models.VMVolumeWhereInput{
@@ -516,7 +515,7 @@ func (n *nodeServer) getVolumeDevice(volumeID string) (*string, error) {
 		return nil, fmt.Errorf("unable to get device from Elf API in VM %v with volume %v", n.config.NodeID, volumeID)
 	}
 
-	return getVmDiskRes.Payload[0].Device, nil
+	return device, nil
 }
 
 func (n *nodeServer) getVolume(volumeID string) (*models.VMVolume, error)  {

@@ -6,6 +6,7 @@ package driver
 import (
 	"context"
 	"fmt"
+	vmdisk "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_disk"
 	"k8s.io/utils/pointer"
 	"net"
 	"net/rpc"
@@ -231,7 +232,6 @@ func (c *controllerServer) publishVolumeToVm(volumeID string, nodeName string) e
 	updateParams := vm.NewAddVMDiskParams()
 	updateParams.RequestBody = &models.VMAddDiskParams{
 		Where: &models.VMWhereInput{
-			// TODO(tower): mapping node name to VM
 			Name: pointy.String(nodeName),
 		},
 		Data: &models.VMAddDiskParamsData{
@@ -308,12 +308,69 @@ func (c *controllerServer) ControllerGetVolume(
 	return nil, status.Error(codes.Unimplemented, "unimplemented")
 }
 
-// TODO(tower): implement DeleteVolume by tower sdk
 func (c *controllerServer) ControllerUnpublishVolume(
 	ctx context.Context,
 	req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
+	volumeID := req.GetVolumeId()
+	if volumeID == "" {
+		return nil, status.Error(codes.InvalidArgument, "volumeId is empty")
+	}
+
+	nodeName := req.GetNodeId()
+	if nodeName == "" {
+		return nil, status.Error(codes.InvalidArgument, "nodeId is empty")
+	}
+
+	if err := c.unpublishVolumeFromVm(volumeID, nodeName); err != nil {
+		return nil, err
+	}
 
 	return &csi.ControllerUnpublishVolumeResponse{}, nil
+}
+
+func (c *controllerServer) unpublishVolumeFromVm(volumeID string, nodeName string) error {
+	getVmDiskParams := vmdisk.NewGetVMDisksParams()
+	getVmDiskParams.RequestBody = &models.GetVMDisksRequestBody{
+		Where: &models.VMDiskWhereInput{
+			VM: &models.VMWhereInput{
+				Name: pointy.String(nodeName),
+			},
+			VMVolume: &models.VMVolumeWhereInput{
+				ID: pointer.String(volumeID),
+			},
+		},
+	}
+
+	getVmDiskRes, err := c.config.TowerClient.VMDisk.GetVMDisks(getVmDiskParams)
+	if err != nil {
+		return err
+	}
+
+	if len(getVmDiskRes.Payload) < 1 {
+		return fmt.Errorf("unable to get VM disk in VM %v with volume %v", nodeName, volumeID)
+	}
+
+	diskId := getVmDiskRes.Payload[0].ID
+	if diskId == nil || *diskId == "" {
+		return fmt.Errorf("unable to get disk ID from API in VM %v with volume %v", nodeName, volumeID)
+	}
+
+	updateParams := vm.NewRemoveVMDiskParams()
+	updateParams.RequestBody = &models.VMRemoveDiskParams{
+		Where: &models.VMWhereInput{
+			Name: pointy.String(nodeName),
+		},
+		Data: &models.VMRemoveDiskParamsData{
+			DiskIds: []string{*diskId},
+		},
+	}
+
+	updateRes, err := c.config.TowerClient.VM.RemoveVMDisk(updateParams)
+	if err != nil {
+		return err
+	}
+
+	return utils.WaitTask(c.config.TowerClient, updateRes.Payload[0].TaskID)
 }
 
 func (c *controllerServer) ValidateVolumeCapabilities(
