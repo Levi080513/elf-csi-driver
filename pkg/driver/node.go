@@ -5,16 +5,20 @@ package driver
 
 import (
 	"context"
+	"fmt"
+	"github.com/openlyinc/pointy"
+	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
+	"k8s.io/utils/pointer"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/iomesh/operator/pkg/commonutils"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	kmount "k8s.io/utils/mount"
 
+	vmdisk "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_disk"
 	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 )
 
@@ -238,21 +242,17 @@ func (n *nodeServer) NodeStageVolume(
 		return nil, status.Error(codes.InvalidArgument, "staging target path is empty")
 	}
 
-	// TODO(tower): need to locate the specific device letter(/dev/vd?) through the properties of vmvolume in tower,
-	// instead of using dmesg
-	findDeviceCmd := "dmesg | grep virtio_blk | egrep -o 'vd.' | tail -1 | tr -d '\n'"
-	output, err := commonutils.Cmd(findDeviceCmd)
+	device, err := n.getVolumeDevice(volumeID)
 	if err != nil {
 		return nil, err
 	}
 
-	device := "/dev/" + output
 	stagingPath := generateStagingPath(stagingTargetPath, volumeID)
 
 	if req.GetVolumeCapability().GetBlock() != nil {
-		err = n.mountBlockVolume(device, stagingPath, false)
+		err = n.mountBlockVolume(*device, stagingPath, false)
 	} else {
-		err = n.mountMountVolume(device, stagingPath, req.GetVolumeCapability().GetMount(), false)
+		err = n.mountMountVolume(*device, stagingPath, req.GetVolumeCapability().GetMount(), false)
 	}
 
 	if err != nil {
@@ -340,19 +340,15 @@ func (n *nodeServer) NodePublishVolume(
 			"STAGE_UNSTAGE_VOLUME capability is set but no staging_target_path is empty")
 	}
 
-	// TODO(tower): need to locate the specific device letter(/dev/vd?) through the properties of vmvolume in tower,
-	// instead of using dmesg
-	findDeviceCmd := "dmesg | grep virtio_blk | egrep -o 'vd.' | tail -1 | tr -d '\n'"
-	output, err := commonutils.Cmd(findDeviceCmd)
+	device, err := n.getVolumeDevice(volumeID)
 	if err != nil {
 		return nil, err
 	}
 
-	device := "/dev/" + output
 	stagingPath := generateStagingPath(stagingTargetPath, volumeID)
 
 	if volumeCapability.GetBlock() != nil {
-		err = n.mountBlockVolume(device, targetPath, req.GetReadonly())
+		err = n.mountBlockVolume(*device, targetPath, req.GetReadonly())
 	} else {
 		err = n.bindMountVolume(stagingPath, targetPath, volumeCapability.GetMount(),
 			req.GetReadonly())
@@ -451,4 +447,34 @@ func (n *nodeServer) NodeExpandVolume(
 	ctx context.Context,
 	req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
 	return nil, nil
+}
+
+func (n nodeServer) getVolumeDevice(volumeID string) (*string, error) {
+	getVmDiskParams := vmdisk.NewGetVMDisksParams()
+	getVmDiskParams.RequestBody = &models.GetVMDisksRequestBody{
+		Where: &models.VMDiskWhereInput{
+			VM: &models.VMWhereInput{
+				// TODO(tower): mapping node name to VM
+				Name: pointy.String(n.config.NodeID),
+			},
+			VMVolume: &models.VMVolumeWhereInput{
+				ID: pointer.String(volumeID),
+			},
+		},
+	}
+
+	getVmDiskRes, err := n.config.TowerClient.VMDisk.GetVMDisks(getVmDiskParams)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(getVmDiskRes.Payload) < 1 {
+		return nil, fmt.Errorf("unable to get VM disk in VM %v with volume %v", n.config.NodeID, volumeID)
+	}
+
+	if getVmDiskRes.Payload[0].Device == nil {
+		return nil, fmt.Errorf("unable to get device from Elf API in VM %v with volume %v", n.config.NodeID, volumeID)
+	}
+
+	return getVmDiskRes.Payload[0].Device, nil
 }

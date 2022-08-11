@@ -191,6 +191,7 @@ func (c *controllerServer) publishVolumeToVm(volumeID string, nodeName string) e
 	updateParams := vm.NewAddVMDiskParams()
 	updateParams.RequestBody = &models.VMAddDiskParams{
 		Where: &models.VMWhereInput{
+			// TODO(tower): mapping node name to VM
 			Name: pointy.String(nodeName),
 		},
 		Data: &models.VMAddDiskParamsData{
