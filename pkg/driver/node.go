@@ -19,6 +19,7 @@ import (
 	kmount "k8s.io/utils/mount"
 
 	vmdisk "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_disk"
+	vmvolume "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_volume"
 	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 )
 
@@ -442,11 +443,49 @@ func (n *nodeServer) NodeGetInfo(
 	}, nil
 }
 
-// TODO(tower): implement NodeExpandVolume by tower sdk
 func (n *nodeServer) NodeExpandVolume(
 	ctx context.Context,
 	req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
-	return nil, nil
+	volumeID := req.GetVolumeId()
+	if volumeID == "" {
+		return nil, status.Error(codes.InvalidArgument, "volume id is empty")
+	}
+
+	volume, err := n.getVolume(volumeID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal,
+			"failed to find volume %v", volumeID)
+	}
+
+	device, err := n.getVolumeDevice(volumeID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal,
+			"failed to find volume %+v device, %v", volumeID, err)
+	}
+
+	err = n.config.Resizer.ResizeBlock(*device, uint64(*volume.Size))
+	if err != nil {
+		return nil, status.Errorf(codes.Internal,
+			"failed to resize device %v, %v", device, err)
+	}
+
+	fsType, err := n.config.Mount.GetDiskFormat(*device)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal,
+			"failed to get device %v fs type, %v", device, err)
+	}
+
+	if fsType != "" {
+		err = n.config.Resizer.ResizeFS(*device, fsType)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal,
+				"failed to resize device %v fs %v , %v", device, fsType, err)
+		}
+	}
+
+	return &csi.NodeExpandVolumeResponse{
+		CapacityBytes: *volume.Size,
+	}, nil
 }
 
 func (n *nodeServer) getVolumeDevice(volumeID string) (*string, error) {
@@ -472,9 +511,30 @@ func (n *nodeServer) getVolumeDevice(volumeID string) (*string, error) {
 		return nil, fmt.Errorf("unable to get VM disk in VM %v with volume %v", n.config.NodeID, volumeID)
 	}
 
-	if getVmDiskRes.Payload[0].Device == nil {
+	device := getVmDiskRes.Payload[0].Device
+	if device == nil || *device == "" {
 		return nil, fmt.Errorf("unable to get device from Elf API in VM %v with volume %v", n.config.NodeID, volumeID)
 	}
 
 	return getVmDiskRes.Payload[0].Device, nil
+}
+
+func (n *nodeServer) getVolume(volumeID string) (*models.VMVolume, error)  {
+	getVolumeParams := vmvolume.NewGetVMVolumesParams()
+	getVolumeParams.RequestBody = &models.GetVMVolumesRequestBody{
+		Where:  &models.VMVolumeWhereInput{
+			ID: pointer.String(volumeID),
+		},
+	}
+
+	getVolumeRes, err := n.config.TowerClient.VMVolume.GetVMVolumes(getVolumeParams)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(getVolumeRes.Payload) < 1 {
+		return nil, fmt.Errorf("unable to get volume with ID %v", volumeID)
+	}
+
+	return getVolumeRes.Payload[0], nil
 }
