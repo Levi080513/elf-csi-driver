@@ -316,12 +316,32 @@ func (c *controllerServer) ControllerUnpublishVolume(
 	return &csi.ControllerUnpublishVolumeResponse{}, nil
 }
 
-// TODO(tower): implement ValidateVolumeCapabilities by tower sdk
 func (c *controllerServer) ValidateVolumeCapabilities(
 	ctx context.Context,
 	req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
+	volumeID := req.GetVolumeId()
+	if volumeID == "" {
+		return nil, status.Error(codes.InvalidArgument, "volumeId is empty")
+	}
 
-	return nil, nil
+	err := checkVolumeCapabilities(req.GetVolumeCapabilities())
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = c.getVolume(volumeID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal,
+			"failed to find volume %v, %v", volumeID, err)
+	}
+
+	return &csi.ValidateVolumeCapabilitiesResponse{
+		Confirmed: &csi.ValidateVolumeCapabilitiesResponse_Confirmed{
+			VolumeContext:      req.GetVolumeContext(),
+			VolumeCapabilities: req.GetVolumeCapabilities(),
+			Parameters:         req.GetParameters(),
+		},
+	}, nil
 }
 
 func (c *controllerServer) GetCapacity(
@@ -398,10 +418,10 @@ func (c *controllerServer) ControllerExpandVolume(
 }
 
 // TODO(tower): re-use this function with node driver
-func (c *controllerServer) getVolume(volumeID string) (*models.VMVolume, error)  {
+func (c *controllerServer) getVolume(volumeID string) (*models.VMVolume, error) {
 	getVolumeParams := vmvolume.NewGetVMVolumesParams()
 	getVolumeParams.RequestBody = &models.GetVMVolumesRequestBody{
-		Where:  &models.VMVolumeWhereInput{
+		Where: &models.VMVolumeWhereInput{
 			ID: pointer.String(volumeID),
 		},
 	}
@@ -419,6 +439,6 @@ func (c *controllerServer) getVolume(volumeID string) (*models.VMVolume, error) 
 }
 
 // TODO(tower): impl this when sdk updated
-func (c *controllerServer) expandVolume(volumeID string, newSize int64) (error) {
-  return nil
+func (c *controllerServer) expandVolume(volumeID string, newSize int64) error {
+	return nil
 }
