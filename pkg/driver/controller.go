@@ -6,6 +6,8 @@ package driver
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/rpc"
 	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -151,12 +153,49 @@ func (c *controllerServer) ControllerPublishVolume(
 		return nil, status.Error(codes.InvalidArgument, "volumeCapability is empty")
 	}
 
-	// TODO(tower): ensure csi-node-plugin health before publish
+	nodeEntry, err := c.config.NodeMap.Get(nodeName)
+	if err != nil {
+		return nil, err
+	}
+
+	nodeAddr := fmt.Sprintf("%v:%v", nodeEntry.NodeIP, nodeEntry.LivenessPort)
+	err = c.canPublishToNode(nodeAddr)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := c.publishVolumeToVm(volumeID, nodeName); err != nil {
 		return nil, err
 	}
 
 	return &csi.ControllerPublishVolumeResponse{}, nil
+}
+
+func (c *controllerServer) canPublishToNode(nodeAddr string) error {
+	conn, err := net.Dial("tcp", nodeAddr)
+	if err != nil {
+		return status.Error(codes.Internal,
+			fmt.Sprintf("failed to connect to %v, %v", nodeAddr, err))
+	}
+
+	client := rpc.NewClient(conn)
+
+	defer client.Close()
+
+	rsp := &NodeLivenessRsp{}
+
+	err = client.Call("NodeLivenessServer.Liveness", &NodeLivenessReq{}, rsp)
+	if err != nil {
+		return status.Error(codes.Internal,
+			fmt.Sprintf("failed to call %v NodeLiveness.Liveness, %v", nodeAddr, err))
+	}
+
+	if !rsp.Health {
+		return status.Error(codes.FailedPrecondition,
+			fmt.Sprintf("can't publish volume to a unhealth node, %+v", rsp))
+	}
+
+	return nil
 }
 
 // TODO(tower): refine this function via tower sdk best practice
