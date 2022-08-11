@@ -287,10 +287,40 @@ func (c *controllerServer) ControllerGetCapabilities(
 	return resp, nil
 }
 
-// TODO(tower): implement DeleteVolume by tower sdk
 func (c *controllerServer) DeleteVolume(
 	ctx context.Context,
 	req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
+	volumeID := req.GetVolumeId()
+	if volumeID == "" {
+		return nil, status.Error(codes.InvalidArgument, "volumeId is empty")
+	}
+
+	volume, err := c.getVolume(volumeID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal,
+			"failed to find volume %v, %v", volumeID, err)
+	}
+
+	if volume.Mounting != nil && *volume.Mounting == true {
+		return nil, status.Error(codes.FailedPrecondition,
+			fmt.Sprintf("volume %v is in use", volumeID))
+	}
+
+	deleteParams := vmvolume.NewDeleteVMVolumeFromVMParams()
+	deleteParams.RequestBody = &models.VMVolumeDeletionParams{Where: &models.VMVolumeWhereInput{
+		ID: pointy.String(volumeID),
+	}}
+	deleteRes, err := c.config.TowerClient.VMVolume.DeleteVMVolumeFromVM(deleteParams)
+	if err != nil {
+		return nil, status.Error(codes.Internal,
+			fmt.Sprintf("failed to delete volume %v, %v", volumeID, err))
+	}
+
+	err = utils.WaitTask(c.config.TowerClient, deleteRes.Payload[0].TaskID)
+	if err != nil {
+		return nil, status.Error(codes.Internal,
+			fmt.Sprintf("delete volume %v task failed, %v", volumeID, err))
+	}
 
 	return &csi.DeleteVolumeResponse{}, nil
 }
