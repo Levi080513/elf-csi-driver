@@ -58,14 +58,19 @@ func (c *controllerServer) CreateVolume(
 		return nil, err
 	}
 
-	// TODO(tower): parameterization sharing in storageClass
 	params := req.GetParameters()
 	clusterId := params["clusterId"]
 	sp, err := getStoragePolicy(params)
 	if err != nil {
 		return nil, err
 	}
-	vmVolume, err := c.createVmVolume(clusterId, volumeName, *sp, size, false)
+
+	sharing, err := checkNeedSharing(req.GetVolumeCapabilities())
+	if err != nil {
+		return nil, err
+	}
+
+	vmVolume, err := c.createVmVolume(clusterId, volumeName, *sp, size, sharing)
 	if err != nil {
 		return nil, err
 	}

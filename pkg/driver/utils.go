@@ -367,3 +367,29 @@ func getStoragePolicy(params map[string]string) (*models.VMVolumeElfStoragePolic
 	}
 	return &sp, nil
 }
+
+var accessModesNeedSharing = map[csi.VolumeCapability_AccessMode_Mode]bool{
+	csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY:  false,
+	csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER:       false,
+	csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER:  true,
+	csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY:   true,
+	csi.VolumeCapability_AccessMode_MULTI_NODE_SINGLE_WRITER: true,
+}
+
+func checkNeedSharing(caps []*csi.VolumeCapability) (bool, error) {
+	needSharing := false
+	for _, cap := range caps {
+		mode := cap.GetAccessMode().GetMode()
+		sharing, ok := accessModesNeedSharing[mode]
+		if !ok {
+			return false, status.Errorf(codes.InvalidArgument,
+				"unknown access mode %v",
+				mode.String())
+		}
+		if sharing {
+			needSharing = true
+			break
+		}
+	}
+	return needSharing, nil
+}
