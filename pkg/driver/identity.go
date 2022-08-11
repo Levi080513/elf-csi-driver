@@ -5,8 +5,13 @@ package driver
 
 import (
 	"context"
+	"github.com/golang/protobuf/ptypes/wrappers"
+	"github.com/openlyinc/pointy"
+	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/smartxworks/cloudtower-go-sdk/v2/client/user"
+	"k8s.io/klog"
 )
 
 type identityServer struct {
@@ -51,11 +56,22 @@ func (i *identityServer) GetPluginCapabilities(
 	}, nil
 }
 
-// TODO(tower): implement Probe by tower sdk
 func (i *identityServer) Probe(
 	ctx context.Context,
 	req *csi.ProbeRequest) (*csi.ProbeResponse, error) {
-	// TODO(tower): check if tower server healthy
+	getUserParams := user.NewGetUsersParams()
+	getUserParams.RequestBody = &models.GetUsersRequestBody{
+		First: pointy.Int32(1),
+	}
 
-	return &csi.ProbeResponse{}, nil
+	_, err := i.driver.config.TowerClient.User.GetUsers(getUserParams)
+	if err != nil {
+		klog.Warningf("failed to show user info, %+v", err)
+	}
+
+	return &csi.ProbeResponse{
+		Ready: &wrappers.BoolValue{
+			Value: err == nil,
+		},
+	}, nil
 }
