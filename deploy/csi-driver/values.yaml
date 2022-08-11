@@ -23,7 +23,7 @@ storageClass:
   # more default StorageClass detail: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims
   default: false
   # override the default name
-  nameOverride: ""
+  nameOverride: "elf"
   # default parameters for StorageClass
   parameters:
     csi.storage.k8s.io/fstype: "ext4"
@@ -32,19 +32,15 @@ storageClass:
 
 driver:
   image:
-    repository: iomesh/csi-driver
-    tag: ""
+    repository: "registry.smtx.io/elf/csi-driver"
+    tag: "95a3810-dirty-2"
     pullPolicy: IfNotPresent
   # The unique csi driver name in a kubernetes cluster.
   nameOverride: ""
-  # kubernetes-cluster-id
-  clusterID: "my-iomesh"
-  # IOMesh Meta server address
-  metaAddr: ""
-  # IOMesh Chunk server iscsi portal address
-  iscsiPortal: "127.0.0.1:3260"
-  # EXTERNAL / HCI
-  deploymentMode: "HCI"
+  # kubernetes-cluster-idme
+  clusterID: "my-cluster"
+  # CloudTower host address
+  cloudTowerHost: "192.168.31.181"
 
   controller:
     # controller replicas
@@ -74,7 +70,8 @@ driver:
     affinity: {}
     driver:
       # iscsi config
-      iscsi: {}
+      iscsi:
+        {}
         # node.session.queue_depth: 128
         # node.session.cmds_max: 128
         # node.session.timeo.replacement_timeout: 120
@@ -95,7 +92,7 @@ driver:
         memory: 150Mi
 
 sidecar:
-  registry: "iomesh"
+  registry: "registry.smtx.io/kubesmart/iomesh"
 
   resources:
     driver_registrar:

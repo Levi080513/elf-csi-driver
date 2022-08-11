@@ -22,9 +22,9 @@ import (
 	"k8s.io/klog"
 
 	httptransport "github.com/go-openapi/runtime/client"
+	towerclient "github.com/smartxworks/cloudtower-go-sdk/v2/client"
 	"github.com/smartxworks/elf-csi-driver/pkg/driver"
 	"github.com/smartxworks/elf-csi-driver/pkg/utils"
-	towerclient "github.com/smartxworks/cloudtower-go-sdk/v2/client"
 )
 
 const (
@@ -41,7 +41,10 @@ var (
 	kubeConfigPath = flag.String("kube_config_path", "", "kube config path, eg. $HOME/.kube/config")
 	pprofPort      = flag.Int("pprof_port", 0, "")
 
-	towerHost = flag.String("tower_host", "192.168.25.38", "tower server ip")
+	cloudTowerServer   = flag.String("cloud_tower_server", "", "CloudTower server ip")
+	cloudTowerAuthMode = flag.String("cloud_tower_auth_mode", "LOCAL", "CloudTower auth mode")
+	cloudTowerUsername = flag.String("cloud_tower_username", "", "CloudTower username")
+	cloudTowerPassword = flag.String("cloud_tower_password", "", "CloudTower password")
 )
 
 func main() {
@@ -116,17 +119,20 @@ func initCommonConfig(config *driver.DriverConfig) {
 	config.NodeMap = driver.NewNodeMap(*nodeMap, config.KubeClient.CoreV1().ConfigMaps(*namespace))
 	config.ServerAddr = *csiAddr
 
-	// TODO(tower): parameterized tower server authentication method
-	transport := httptransport.New(*towerHost, "/v2/api", []string{"http"})
+	transport := httptransport.New(*cloudTowerServer, "/v2/api", []string{"http"})
 	transport.DefaultAuthentication = httptransport.APIKeyAuth("Authorization", "header", "token")
+	source := models.UserSourceLOCAL
+	if *cloudTowerAuthMode == "LDAP" {
+		source = models.UserSourceLDAP
+	}
 	towerClient, err := towerclient.NewWithUserConfig(towerclient.ClientConfig{
-		Host:     *towerHost,
+		Host:     *cloudTowerServer,
 		BasePath: "v2/api",
 		Schemes:  []string{"http"},
 	}, towerclient.UserConfig{
-		Name:     "ziyin.lu",
-		Password: "qszlzylyqk0O",
-		Source:   models.UserSourceLDAP,
+		Name:     *cloudTowerUsername,
+		Password: *cloudTowerPassword,
+		Source:   source,
 	})
 
 	if err != nil {
