@@ -438,7 +438,7 @@ func (n *nodeServer) NodeGetInfo(
 	req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
 	return &csi.NodeGetInfoResponse{
 		NodeId:            n.config.NodeID,
-		MaxVolumesPerNode: 128,
+		MaxVolumesPerNode: 66,
 	}, nil
 }
 
@@ -449,7 +449,7 @@ func (n *nodeServer) NodeExpandVolume(
 	return nil, nil
 }
 
-func (n nodeServer) getVolumeDevice(volumeID string) (*string, error) {
+func (n *nodeServer) getVolumeDevice(volumeID string) (*string, error) {
 	getVmDiskParams := vmdisk.NewGetVMDisksParams()
 	getVmDiskParams.RequestBody = &models.GetVMDisksRequestBody{
 		Where: &models.VMDiskWhereInput{
