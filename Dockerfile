@@ -16,7 +16,7 @@ RUN make && upx bin/csi-driver
 
 FROM ubuntu:20.04 as csi-driver
 
-RUN apt-get update && apt-get install -y libkmod-dev libiscsi-dev \
+RUN apt-get update && apt-get install -y libkmod-dev libiscsi-dev udev \
     ca-certificates \
     e2fsprogs \
     xfsprogs \

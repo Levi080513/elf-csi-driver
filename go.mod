@@ -5,8 +5,8 @@ go 1.14
 require (
 	github.com/container-storage-interface/spec v1.3.0
 	github.com/go-openapi/runtime v0.24.1
-	github.com/golang/protobuf v1.5.2 // indirect
-	github.com/iomesh/operator v0.11.1
+	github.com/golang/protobuf v1.5.2
+	github.com/iomesh/operator v0.11.1 // indirect
 	github.com/iomesh/zbs-client-go v1.2.3
 	github.com/kubernetes-csi/csi-test/v3 v3.1.1
 	github.com/kubernetes-csi/external-snapshotter/client/v4 v4.1.0

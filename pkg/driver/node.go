@@ -8,9 +8,12 @@ import (
 	"fmt"
 	"github.com/openlyinc/pointy"
 	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
+	"k8s.io/klog"
 	"k8s.io/utils/pointer"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -510,12 +513,37 @@ func (n *nodeServer) getVolumeDevice(volumeID string) (*string, error) {
 		return nil, fmt.Errorf("unable to get VM disk in VM %v with volume %v", n.config.NodeID, volumeID)
 	}
 
-	device := getVmDiskRes.Payload[0].Device
-	if device == nil || *device == "" {
-		return nil, fmt.Errorf("unable to get device from Elf API in VM %v with volume %v", n.config.NodeID, volumeID)
+	device := ""
+	serial := getVmDiskRes.Payload[0].Serial
+	if serial == nil || *serial == "" {
+		return nil, fmt.Errorf("unable to get serial from Elf API in VM %v with volume %v", n.config.NodeID, volumeID)
 	}
 
-	return device, nil
+	lsblkCmd := `lsblk -o "NAME" -e 1,7,11 -d -n`
+	output, err := exec.Command("/bin/sh", "-c", lsblkCmd).CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("failed to lsblk, %v", string(output))
+	}
+	for _, d := range strings.Fields(string(output)) {
+		udevCmd := fmt.Sprintf("udevadm info --query=all --name=%v | grep ID_SERIAL", d)
+		idSerialLine, err := exec.Command("/bin/sh", "-c", udevCmd).CombinedOutput()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get ID_SERIAL from udevadm, %v", string(idSerialLine))
+		}
+		idSerial := strings.Split(strings.TrimSpace(string(idSerialLine)), "=")
+		klog.Infof("ID_SERIAL parsed from udevadm is %v, comparing to %v", idSerial, *serial)
+		if len(idSerial) != 2 {
+			continue
+		}
+		if strings.HasPrefix(*serial, idSerial[1]) {
+			device = fmt.Sprintf("/dev/%v", d)
+		}
+	}
+	if device == "" {
+		return nil, fmt.Errorf("failed to get device, raw output is: %v", string(output))
+	}
+
+	return &device, nil
 }
 
 func (n *nodeServer) getVolume(volumeID string) (*models.VMVolume, error)  {

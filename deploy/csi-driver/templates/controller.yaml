@@ -48,7 +48,10 @@ spec:
             - --role=controller
             - --namespace=$(NAMESPACE)
             - --node_map={{ include "csi-driver.fullname" . }}-node-map
-            - --tower_host={{ .Values.driver.cloudTowerHost }}
+            - --cloud_tower_server={{ .Values.driver.cloudTowerServer }}
+            - --cloud_tower_auth_mode={{ .Values.driver.cloudTowerAuthMode }}
+            - --cloud_tower_username={{ .Values.driver.cloudTowerUsername }}
+            - --cloud_tower_password={{ .Values.driver.cloudTowerPassword }}
             - --v=1
           volumeMounts:
             - name: socket-dir

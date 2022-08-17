@@ -107,10 +107,10 @@ volumes:
   hostPath:
     path: /var/lib/iscsi
     type: DirectoryOrCreate
-- name: iscsiadm
+- name: udev
   hostPath:
-    path: /sbin/iscsiadm
-    type: File
+    path: /run/udev
+    type: Directory
 - name: lib
   hostPath:
     path: /lib
@@ -152,8 +152,8 @@ volumeMounts:
   mountPath: /dev
 - name: iscsi-dir
   mountPath: /host/etc/iscsi
-- name: iscsiadm
-  mountPath: /host/sbin/iscsiadm
+- name: udev
+  mountPath: /run/udev
 - name: iscsi-lib
   mountPath: /host/var/lib/iscsi
 - name: lib
