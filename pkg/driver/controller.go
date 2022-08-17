@@ -166,6 +166,11 @@ func (c *controllerServer) ControllerPublishVolume(
 		return nil, err
 	}
 
+	c.keyMutex.LockKey(nodeName)
+	defer func() {
+		_ = c.keyMutex.UnlockKey(nodeName)
+	}()
+
 	if err := c.publishVolumeToVm(volumeID, nodeName); err != nil {
 		return nil, err
 	}
@@ -220,13 +225,29 @@ func (c *controllerServer) publishVolumeToVm(volumeID string, nodeName string) e
 	}
 
 	if len(getRes.Payload[0].VMDisks) > 0 {
-		klog.Info("volume %v already published, corresponding vm disk: %v", getRes.Payload[0].VMDisks)
+		klog.Infof("volume %v already published, corresponding vm disk: %v", getRes.Payload[0].VMDisks)
 		return nil
 	}
 
 	if *getRes.Payload[0].Mounting {
-		klog.Info("volume %v is mounting on node %v", volumeID, nodeName)
+		klog.Infof("volume %v is mounting on node %v", volumeID, nodeName)
 		return nil
+	}
+
+	getVmParams := vm.NewGetVmsParams()
+	getVmParams.RequestBody = &models.GetVmsRequestBody{
+		Where: &models.VMWhereInput{
+			Name: pointy.String(nodeName),
+		},
+	}
+
+	getVMRes, err := c.config.TowerClient.VM.GetVms(getVmParams)
+	if err != nil {
+		return err
+	}
+
+	if len(getVMRes.Payload) < 1 {
+		return fmt.Errorf("unable to get VM: %v", nodeName)
 	}
 
 	updateParams := vm.NewAddVMDiskParams()
@@ -240,7 +261,7 @@ func (c *controllerServer) publishVolumeToVm(volumeID string, nodeName string) e
 					{
 						Index:      pointy.Int32(0),
 						VMVolumeID: pointy.String(volumeID),
-						Boot:       pointy.Int32(0),
+						Boot:       pointy.Int32(int32(len(getVMRes.Payload[0].VMDisks) + 1)),
 						Bus:        models.BusVIRTIO.Pointer(),
 					},
 				},
@@ -351,6 +372,11 @@ func (c *controllerServer) ControllerUnpublishVolume(
 		return nil, status.Error(codes.InvalidArgument, "nodeId is empty")
 	}
 
+	c.keyMutex.LockKey(nodeName)
+	defer func() {
+		_ = c.keyMutex.UnlockKey(nodeName)
+	}()
+
 	if err := c.unpublishVolumeFromVm(volumeID, nodeName); err != nil {
 		return nil, err
 	}
@@ -377,7 +403,8 @@ func (c *controllerServer) unpublishVolumeFromVm(volumeID string, nodeName strin
 	}
 
 	if len(getVmDiskRes.Payload) < 1 {
-		return fmt.Errorf("unable to get VM disk in VM %v with volume %v", nodeName, volumeID)
+		klog.Info("unable to get VM disk in VM %v with volume %v, skip the unpublish process", nodeName, volumeID)
+		return nil
 	}
 
 	diskId := getVmDiskRes.Payload[0].ID
