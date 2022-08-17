@@ -6,6 +6,10 @@ package driver
 import (
 	"context"
 	"fmt"
+	vmdisk "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_disk"
+	"k8s.io/utils/pointer"
+	"net"
+	"net/rpc"
 	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -24,6 +28,7 @@ const (
 	GB            = 1 << 30
 	ReplicaFactor = "replicaFactor"
 	ThinProvision = "thinProvision"
+	StoragePolicy = "storagePolicy"
 
 	defaultVolumeSize = 1 * GB
 	labelKeyName      = "k8s-cluster-id"
@@ -57,8 +62,19 @@ func (c *controllerServer) CreateVolume(
 		return nil, err
 	}
 
-	// TODO(tower): parameterization storagePolicy/elfClusterId/sharing in storageClass
-	vmVolume, err := c.createVmVolume("cl319n65m01le0758xguye0t3", volumeName, models.VMVolumeElfStoragePolicyTypeREPLICA2THINPROVISION, size, false)
+	params := req.GetParameters()
+	clusterId := params["clusterId"]
+	sp, err := getStoragePolicy(params)
+	if err != nil {
+		return nil, err
+	}
+
+	sharing, err := checkNeedSharing(req.GetVolumeCapabilities())
+	if err != nil {
+		return nil, err
+	}
+
+	vmVolume, err := c.createVmVolume(clusterId, volumeName, *sp, size, sharing)
 	if err != nil {
 		return nil, err
 	}
@@ -139,12 +155,49 @@ func (c *controllerServer) ControllerPublishVolume(
 		return nil, status.Error(codes.InvalidArgument, "volumeCapability is empty")
 	}
 
-	// TODO(tower): ensure csi-node-plugin health before publish
+	nodeEntry, err := c.config.NodeMap.Get(nodeName)
+	if err != nil {
+		return nil, err
+	}
+
+	nodeAddr := fmt.Sprintf("%v:%v", nodeEntry.NodeIP, nodeEntry.LivenessPort)
+	err = c.canPublishToNode(nodeAddr)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := c.publishVolumeToVm(volumeID, nodeName); err != nil {
 		return nil, err
 	}
 
 	return &csi.ControllerPublishVolumeResponse{}, nil
+}
+
+func (c *controllerServer) canPublishToNode(nodeAddr string) error {
+	conn, err := net.Dial("tcp", nodeAddr)
+	if err != nil {
+		return status.Error(codes.Internal,
+			fmt.Sprintf("failed to connect to %v, %v", nodeAddr, err))
+	}
+
+	client := rpc.NewClient(conn)
+
+	defer client.Close()
+
+	rsp := &NodeLivenessRsp{}
+
+	err = client.Call("NodeLivenessServer.Liveness", &NodeLivenessReq{}, rsp)
+	if err != nil {
+		return status.Error(codes.Internal,
+			fmt.Sprintf("failed to call %v NodeLiveness.Liveness, %v", nodeAddr, err))
+	}
+
+	if !rsp.Health {
+		return status.Error(codes.FailedPrecondition,
+			fmt.Sprintf("can't publish volume to a unhealth node, %+v", rsp))
+	}
+
+	return nil
 }
 
 // TODO(tower): refine this function via tower sdk best practice
@@ -234,10 +287,40 @@ func (c *controllerServer) ControllerGetCapabilities(
 	return resp, nil
 }
 
-// TODO(tower): implement DeleteVolume by tower sdk
 func (c *controllerServer) DeleteVolume(
 	ctx context.Context,
 	req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
+	volumeID := req.GetVolumeId()
+	if volumeID == "" {
+		return nil, status.Error(codes.InvalidArgument, "volumeId is empty")
+	}
+
+	volume, err := c.getVolume(volumeID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal,
+			"failed to find volume %v, %v", volumeID, err)
+	}
+
+	if volume.Mounting != nil && *volume.Mounting == true {
+		return nil, status.Error(codes.FailedPrecondition,
+			fmt.Sprintf("volume %v is in use", volumeID))
+	}
+
+	deleteParams := vmvolume.NewDeleteVMVolumeFromVMParams()
+	deleteParams.RequestBody = &models.VMVolumeDeletionParams{Where: &models.VMVolumeWhereInput{
+		ID: pointy.String(volumeID),
+	}}
+	deleteRes, err := c.config.TowerClient.VMVolume.DeleteVMVolumeFromVM(deleteParams)
+	if err != nil {
+		return nil, status.Error(codes.Internal,
+			fmt.Sprintf("failed to delete volume %v, %v", volumeID, err))
+	}
+
+	err = utils.WaitTask(c.config.TowerClient, deleteRes.Payload[0].TaskID)
+	if err != nil {
+		return nil, status.Error(codes.Internal,
+			fmt.Sprintf("delete volume %v task failed, %v", volumeID, err))
+	}
 
 	return &csi.DeleteVolumeResponse{}, nil
 }
@@ -255,20 +338,97 @@ func (c *controllerServer) ControllerGetVolume(
 	return nil, status.Error(codes.Unimplemented, "unimplemented")
 }
 
-// TODO(tower): implement DeleteVolume by tower sdk
 func (c *controllerServer) ControllerUnpublishVolume(
 	ctx context.Context,
 	req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
+	volumeID := req.GetVolumeId()
+	if volumeID == "" {
+		return nil, status.Error(codes.InvalidArgument, "volumeId is empty")
+	}
+
+	nodeName := req.GetNodeId()
+	if nodeName == "" {
+		return nil, status.Error(codes.InvalidArgument, "nodeId is empty")
+	}
+
+	if err := c.unpublishVolumeFromVm(volumeID, nodeName); err != nil {
+		return nil, err
+	}
 
 	return &csi.ControllerUnpublishVolumeResponse{}, nil
 }
 
-// TODO(tower): implement ValidateVolumeCapabilities by tower sdk
+func (c *controllerServer) unpublishVolumeFromVm(volumeID string, nodeName string) error {
+	getVmDiskParams := vmdisk.NewGetVMDisksParams()
+	getVmDiskParams.RequestBody = &models.GetVMDisksRequestBody{
+		Where: &models.VMDiskWhereInput{
+			VM: &models.VMWhereInput{
+				Name: pointy.String(nodeName),
+			},
+			VMVolume: &models.VMVolumeWhereInput{
+				ID: pointer.String(volumeID),
+			},
+		},
+	}
+
+	getVmDiskRes, err := c.config.TowerClient.VMDisk.GetVMDisks(getVmDiskParams)
+	if err != nil {
+		return err
+	}
+
+	if len(getVmDiskRes.Payload) < 1 {
+		return fmt.Errorf("unable to get VM disk in VM %v with volume %v", nodeName, volumeID)
+	}
+
+	diskId := getVmDiskRes.Payload[0].ID
+	if diskId == nil || *diskId == "" {
+		return fmt.Errorf("unable to get disk ID from API in VM %v with volume %v", nodeName, volumeID)
+	}
+
+	updateParams := vm.NewRemoveVMDiskParams()
+	updateParams.RequestBody = &models.VMRemoveDiskParams{
+		Where: &models.VMWhereInput{
+			Name: pointy.String(nodeName),
+		},
+		Data: &models.VMRemoveDiskParamsData{
+			DiskIds: []string{*diskId},
+		},
+	}
+
+	updateRes, err := c.config.TowerClient.VM.RemoveVMDisk(updateParams)
+	if err != nil {
+		return err
+	}
+
+	return utils.WaitTask(c.config.TowerClient, updateRes.Payload[0].TaskID)
+}
+
 func (c *controllerServer) ValidateVolumeCapabilities(
 	ctx context.Context,
 	req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
+	volumeID := req.GetVolumeId()
+	if volumeID == "" {
+		return nil, status.Error(codes.InvalidArgument, "volumeId is empty")
+	}
 
-	return nil, nil
+	err := checkVolumeCapabilities(req.GetVolumeCapabilities())
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = c.getVolume(volumeID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal,
+			"failed to find volume %v, %v", volumeID, err)
+	}
+
+	return &csi.ValidateVolumeCapabilitiesResponse{
+		Confirmed: &csi.ValidateVolumeCapabilitiesResponse_Confirmed{
+			VolumeContext:      req.GetVolumeContext(),
+			VolumeCapabilities: req.GetVolumeCapabilities(),
+			Parameters:         req.GetParameters(),
+		},
+	}, nil
 }
 
 func (c *controllerServer) GetCapacity(
@@ -297,9 +457,75 @@ func (c *controllerServer) ListSnapshots(
 	return nil, status.Error(codes.Unimplemented, "unimplemented")
 }
 
-// TODO(tower): implement ControllerExpandVolume by tower sdk
 func (c *controllerServer) ControllerExpandVolume(
 	ctx context.Context,
 	req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
-	return nil, nil
+	volumeID := req.GetVolumeId()
+	if volumeID == "" {
+		return nil, status.Error(codes.InvalidArgument, "volume id is empty")
+	}
+
+	if req.GetCapacityRange() == nil {
+		return nil, status.Error(codes.InvalidArgument, "capacity range is empty")
+	}
+
+	if req.GetVolumeCapability() != nil {
+		err := checkVolumeCapabilities([]*csi.VolumeCapability{req.GetVolumeCapability()})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	newSize, err := getVolumeSize(req.GetCapacityRange())
+	if err != nil {
+		return nil, err
+	}
+
+	volume, err := c.getVolume(volumeID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal,
+			"failed to find volume %v, %v", volumeID, err)
+	}
+
+	uSize := uint64(*volume.Size)
+	if uSize < newSize {
+		err = c.expandVolume(volumeID, int64(newSize))
+		if err != nil {
+			return nil, status.Errorf(codes.Internal,
+				"failed to update volume %v size, %v", volumeID, err)
+		}
+	} else {
+		klog.Info("volume's the new size is not larger than the current size, request ignored, volume ID: %v", volumeID)
+	}
+
+	return &csi.ControllerExpandVolumeResponse{
+		CapacityBytes:         *volume.Size,
+		NodeExpansionRequired: true,
+	}, nil
+}
+
+// TODO(tower): re-use this function with node driver
+func (c *controllerServer) getVolume(volumeID string) (*models.VMVolume, error) {
+	getVolumeParams := vmvolume.NewGetVMVolumesParams()
+	getVolumeParams.RequestBody = &models.GetVMVolumesRequestBody{
+		Where: &models.VMVolumeWhereInput{
+			ID: pointer.String(volumeID),
+		},
+	}
+
+	getVolumeRes, err := c.config.TowerClient.VMVolume.GetVMVolumes(getVolumeParams)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(getVolumeRes.Payload) < 1 {
+		return nil, fmt.Errorf("unable to get volume with ID %v", volumeID)
+	}
+
+	return getVolumeRes.Payload[0], nil
+}
+
+// TODO(tower): impl this when sdk updated
+func (c *controllerServer) expandVolume(volumeID string, newSize int64) error {
+	return nil
 }
