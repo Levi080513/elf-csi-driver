@@ -33,7 +33,7 @@ storageClass:
 driver:
   image:
     repository: "registry.smtx.io/elf/csi-driver"
-    tag: "95a3810-dirty-2"
+    tag: "95a3810-dirty-11"
     pullPolicy: IfNotPresent
   # The unique csi driver name in a kubernetes cluster.
   nameOverride: ""
