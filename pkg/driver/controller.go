@@ -6,18 +6,19 @@ package driver
 import (
 	"context"
 	"fmt"
+	"github.com/smartxworks/cloudtower-go-sdk/v2/client/task"
 	vmdisk "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_disk"
 	"k8s.io/utils/pointer"
 	"net"
 	"net/rpc"
 	"strings"
+	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/openlyinc/pointy"
 	"github.com/smartxworks/cloudtower-go-sdk/v2/client/vm"
 	vmvolume "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_volume"
 	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
-	"github.com/smartxworks/cloudtower-go-sdk/v2/utils"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/klog/v2"
@@ -90,7 +91,6 @@ func (c *controllerServer) CreateVolume(
 	}, nil
 }
 
-// TODO(tower): refine this function via tower sdk best practice
 func (c *controllerServer) createVmVolume(clusterID string, name string, storagePolicy models.VMVolumeElfStoragePolicyType,
 	size uint64, sharing bool) (*models.VMVolume, error) {
 	getParams := vmvolume.NewGetVMVolumesParams()
@@ -105,7 +105,6 @@ func (c *controllerServer) createVmVolume(clusterID string, name string, storage
 		return nil, err
 	}
 
-	// TODO(tower): vmVolume name duplication is allowed in tower, handle this situation
 	if len(getRes.Payload) > 0 {
 		return getRes.Payload[0], nil
 	}
@@ -127,7 +126,7 @@ func (c *controllerServer) createVmVolume(clusterID string, name string, storage
 	}
 
 	withTaskVMVolume := createRes.Payload[0]
-	if err := utils.WaitTask(c.config.TowerClient, withTaskVMVolume.TaskID); err != nil {
+	if err := c.waitTask(withTaskVMVolume.TaskID); err != nil {
 		return nil, err
 	}
 
@@ -205,7 +204,6 @@ func (c *controllerServer) canPublishToNode(nodeAddr string) error {
 	return nil
 }
 
-// TODO(tower): refine this function via tower sdk best practice
 func (c *controllerServer) publishVolumeToVm(volumeID string, nodeName string) error {
 	getParams := vmvolume.NewGetVMVolumesParams()
 	getParams.RequestBody = &models.GetVMVolumesRequestBody{
@@ -219,13 +217,12 @@ func (c *controllerServer) publishVolumeToVm(volumeID string, nodeName string) e
 		return err
 	}
 
-	// TODO(tower): vmVolume name duplication is allowed in tower, handle this situation
 	if len(getRes.Payload) < 1 {
 		return fmt.Errorf("unable to get volume: %v", volumeID)
 	}
 
 	if len(getRes.Payload[0].VMDisks) > 0 {
-		klog.Infof("volume %v already published, corresponding vm disk: %v", getRes.Payload[0].VMDisks)
+		klog.Infof("volume %v already published, corresponding vm disk: %v", volumeID, getRes.Payload[0].VMDisks)
 		return nil
 	}
 
@@ -274,7 +271,7 @@ func (c *controllerServer) publishVolumeToVm(volumeID string, nodeName string) e
 		return err
 	}
 
-	return utils.WaitTask(c.config.TowerClient, updateRes.Payload[0].TaskID)
+	return c.waitTask(updateRes.Payload[0].TaskID)
 }
 
 func (c *controllerServer) ControllerGetCapabilities(
@@ -337,7 +334,7 @@ func (c *controllerServer) DeleteVolume(
 			fmt.Sprintf("failed to delete volume %v, %v", volumeID, err))
 	}
 
-	err = utils.WaitTask(c.config.TowerClient, deleteRes.Payload[0].TaskID)
+	err = c.waitTask(deleteRes.Payload[0].TaskID)
 	if err != nil {
 		return nil, status.Error(codes.Internal,
 			fmt.Sprintf("delete volume %v task failed, %v", volumeID, err))
@@ -403,7 +400,7 @@ func (c *controllerServer) unpublishVolumeFromVm(volumeID string, nodeName strin
 	}
 
 	if len(getVmDiskRes.Payload) < 1 {
-		klog.Info("unable to get VM disk in VM %v with volume %v, skip the unpublish process", nodeName, volumeID)
+		klog.Infof("unable to get VM disk in VM %v with volume %v, skip the unpublish process", nodeName, volumeID)
 		return nil
 	}
 
@@ -427,7 +424,7 @@ func (c *controllerServer) unpublishVolumeFromVm(volumeID string, nodeName strin
 		return err
 	}
 
-	return utils.WaitTask(c.config.TowerClient, updateRes.Payload[0].TaskID)
+	return c.waitTask(updateRes.Payload[0].TaskID)
 }
 
 func (c *controllerServer) ValidateVolumeCapabilities(
@@ -522,7 +519,7 @@ func (c *controllerServer) ControllerExpandVolume(
 				"failed to update volume %v size, %v", volumeID, err)
 		}
 	} else {
-		klog.Info("volume's the new size is not larger than the current size, request ignored, volume ID: %v", volumeID)
+		klog.Infof("volume's the new size is not larger than the current size, request ignored, volume ID: %v", volumeID)
 	}
 
 	return &csi.ControllerExpandVolumeResponse{
@@ -555,4 +552,52 @@ func (c *controllerServer) getVolume(volumeID string) (*models.VMVolume, error) 
 // TODO(tower): impl this when sdk updated
 func (c *controllerServer) expandVolume(volumeID string, newSize int64) error {
 	return nil
+}
+
+func checkTaskFinished(task *models.Task) int8 {
+	switch *task.Status {
+	case models.TaskStatusSUCCESSED:
+		return 0
+	case models.TaskStatusFAILED:
+		return 1
+	default:
+		return -1
+	}
+}
+
+func (c *controllerServer) waitTask(id *string) error {
+	if id == nil {
+		return nil
+	}
+
+	start := time.Now()
+	taskParams := task.NewGetTasksParams()
+	taskParams.RequestBody = &models.GetTasksRequestBody{
+		Where: &models.TaskWhereInput{
+			ID: id,
+		},
+	}
+
+	for {
+		tasks, err := c.config.TowerClient.Task.GetTasks(taskParams)
+		if err != nil {
+			return err
+		}
+		if len(tasks.GetPayload()) <= 0 {
+			time.Sleep(5 * time.Second)
+			if time.Since(start) > 1*time.Minute {
+				return fmt.Errorf("task %s not found after 1 minute", *id)
+			}
+		} else if checkTaskFinished(tasks.Payload[0]) >= 0 {
+			if *tasks.Payload[0].Status == models.TaskStatusFAILED {
+				return fmt.Errorf("task %s failed", *id)
+			}
+			return nil
+		} else {
+			time.Sleep(5 * time.Second)
+			if time.Since(start) > 10*time.Minute {
+				return fmt.Errorf("task %s timeout", *id)
+			}
+		}
+	}
 }
