@@ -27,8 +27,13 @@ storageClass:
   # default parameters for StorageClass
   parameters:
     csi.storage.k8s.io/fstype: "ext4"
-    replicaFactor: "2"
-    thinProvision: "true"
+    replicaFactor: "3"
+    thinProvision: "false"
+    clusterId: ""
+
+  reclaimPolicy: Retain
+  volumeBindingMode: Immediate
+  allowVolumeExpansion: true
 
 driver:
   image:
