@@ -57,6 +57,18 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
+Create the node plugin common volumes
+*/}}
+{{- define "csi-driver.node.volumes.common" -}}
+{{- end }}
+
+{{/*
+Create the node plugin common volumeMounts
+*/}}
+{{- define "csi-driver.node.volumeMounts.common" -}}
+{{- end }}
+
+{{/*
 Create the node plugin volumes
 */}}
 {{- define "csi-driver.node.volumes" -}}

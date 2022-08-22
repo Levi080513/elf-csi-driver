@@ -12,7 +12,7 @@ provisioner: {{ include "csi-driver.driver.name" . }}
 parameters:
 {{- toYaml . | nindent 2}}
 {{- end }}
-reclaimPolicy: Retain
-allowVolumeExpansion: true
-volumeBindingMode: Immediate
+reclaimPolicy: {{ $.Values.storageClass.reclaimPolicy }}
+allowVolumeExpansion: {{ $.Values.storageClass.allowVolumeExpansion }}
+volumeBindingMode: {{ $.Values.storageClass.volumeBindingMode }}
 {{- end }}
