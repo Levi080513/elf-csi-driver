@@ -33,14 +33,17 @@ storageClass:
 driver:
   image:
     repository: "registry.smtx.io/elf/csi-driver"
-    tag: "95a3810-dirty-11"
+    tag: ""
     pullPolicy: IfNotPresent
   # The unique csi driver name in a kubernetes cluster.
   nameOverride: ""
   # kubernetes-cluster-idme
   clusterID: "my-cluster"
   # CloudTower host address
-  cloudTowerHost: "192.168.31.181"
+  cloudTowerServer: ""
+  cloudTowerAuthMode: ""
+  cloudTowerUsername: ""
+  cloudTowerPassword: ""
 
   controller:
     # controller replicas
@@ -54,7 +57,7 @@ driver:
     driver:
       # driver ports(If hostNetwork is true, ports are host ports)
       ports:
-        health: 9810
+        health: 9910
     resources:
       limits:
         cpu: 100m
@@ -69,18 +72,10 @@ driver:
     # affinity of csi-node-plugin Pod
     affinity: {}
     driver:
-      # iscsi config
-      iscsi:
-        {}
-        # node.session.queue_depth: 128
-        # node.session.cmds_max: 128
-        # node.session.timeo.replacement_timeout: 120
       # host ports
       ports:
-        health: 9811
-        liveness: 9812
-      # If your worker is CentOS8 or CoreOS, please set this to true.
-      mountIscsiLock: false
+        health: 9911
+        liveness: 9912
       # kubelet root directory
       kubeletRootDir: "/var/lib/kubelet"
     resources:

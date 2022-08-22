@@ -23,8 +23,8 @@ jobs:
 
       - name: Configure git for private modules
         env:
-          TOKEN: ${{ secrets.IOMESH_ROBOT_ACCESS_TOKEN }}
-          USERNAME: ${{ secrets.IOMESH_ROBOT_USERNAME }}
+          TOKEN: ${{ secrets.CI_ACCESS_TOKEN }}
+          USERNAME: ${{ secrets.CI_USERNAME }}
         run: git config --global url."https://${USERNAME}:${TOKEN}@github.com".insteadOf "https://github.com"
 
       - name: build image
