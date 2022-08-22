@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+const (
+	retryLimit = 15
+	cmdTimeout = 5 * time.Second
+)
+
 func Retry(fn func() error, retryLimit int, interval time.Duration) error {
 	var err error
 	for i := 0; i < retryLimit; i++ {

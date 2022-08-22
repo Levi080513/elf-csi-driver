@@ -14,7 +14,7 @@ If release name contains chart name it will be used as a full name.
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else -}}
-smtx-elf-{{ default .Chart.Name .Values.nameOverride }}
+smtx-{{ default .Chart.Name .Values.nameOverride }}
 {{- end }}
 {{- end }}
 
@@ -57,27 +57,6 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
-Create the node plugin common volumes
-*/}}
-{{- define "csi-driver.node.volumes.common" -}}
-- name: iscsi-config
-  configMap:
-    name: {{ include "csi-driver.fullname" . }}-iscsi-config
-    items:
-    - key: iscsi
-      path: iscsi.yaml
-{{- end }}
-
-{{/*
-Create the node plugin common volumeMounts
-*/}}
-{{- define "csi-driver.node.volumeMounts.common" -}}
-- name: iscsi-config
-  mountPath: /etc/iomesh
-  readOnly: true
-{{- end }}
-
-{{/*
 Create the node plugin volumes
 */}}
 {{- define "csi-driver.node.volumes" -}}
@@ -99,14 +78,6 @@ volumes:
   hostPath:
     path: {{ .Values.driver.node.driver.kubeletRootDir }}/plugins_registry/
     type: DirectoryOrCreate
-- name: iscsi-dir
-  hostPath:
-    path: /etc/iscsi
-    type: Directory
-- name: iscsi-lib
-  hostPath:
-    path: /var/lib/iscsi
-    type: DirectoryOrCreate
 - name: udev
   hostPath:
     path: /run/udev
@@ -127,14 +98,6 @@ volumes:
   hostPath:
     path: /sys
     type: Directory
-- name: iscsi-run-lock
-  hostPath:
-    path: /run/lock/iscsi
-    type: DirectoryOrCreate
-- name: iscsi-var-lock
-  hostPath:
-    path: /var/lock/iscsi
-    type: DirectoryOrCreate
 {{- end }}
 
 {{/*
@@ -150,12 +113,8 @@ volumeMounts:
   mountPropagation: Bidirectional
 - name: device-dir
   mountPath: /dev
-- name: iscsi-dir
-  mountPath: /host/etc/iscsi
 - name: udev
   mountPath: /run/udev
-- name: iscsi-lib
-  mountPath: /host/var/lib/iscsi
 - name: lib
   mountPath: /host/lib
 - name: lib64
@@ -164,10 +123,6 @@ volumeMounts:
   mountPath: /host/usr/lib64
 - name: sys
   mountPath: /host/sys
-- name: iscsi-run-lock
-  mountPath: /host/run/lock/iscsi
-- name: iscsi-var-lock
-  mountPath: /host/var/lock/iscsi
 {{- end }}
 
 {{/*
@@ -184,7 +139,7 @@ csi-driver storageClass name
 {{- if .Values.storageClass.nameOverride }}
 {{- .Values.storageClass.nameOverride }}
 {{- else -}}
-smtx-elf-{{include "csi-driver.name" .}}
+smtx-{{include "csi-driver.name" .}}
 {{- end }}
 {{- end }}
 

@@ -4,7 +4,6 @@
 package driver
 
 import (
-	"errors"
 	"fmt"
 	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
 	"net"
@@ -14,25 +13,9 @@ import (
 	"path/filepath"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	zbs_proto "github.com/iomesh/zbs-client-go/gen/proto/zbs"
-	"github.com/iomesh/zbs-client-go/gen/proto/zbs/meta"
-	"github.com/iomesh/zbs-client-go/zbs"
-	zbsError "github.com/iomesh/zbs-client-go/zbs/error"
 )
-
-type volumeFilesystemStats struct {
-	availableBytes int64
-	totalBytes     int64
-	usedBytes      int64
-
-	availableInodes int64
-	totalInodes     int64
-	usedInodes      int64
-}
 
 func roundUp(num uint64, base uint64) uint64 {
 	div := num / base
@@ -68,17 +51,17 @@ func checkVolumeCapabilities(volumeCapabilities []*csi.VolumeCapability) error {
 		return status.Error(codes.InvalidArgument, "volumeCapablities is empty")
 	}
 
-	for _, cap := range volumeCapabilities {
-		if cap == nil {
+	for _, c := range volumeCapabilities {
+		if c == nil {
 			return status.Error(codes.InvalidArgument, "volumeCapablities is empty")
 		}
 
-		accessMode := cap.GetAccessMode()
+		accessMode := c.GetAccessMode()
 		if accessMode == nil {
 			return status.Error(codes.InvalidArgument, "access mode is empty")
 		}
 
-		if cap.GetMount() != nil {
+		if c.GetMount() != nil {
 			_, ok := mountModeAccessModes[accessMode.GetMode()]
 			if !ok {
 				return status.Errorf(codes.InvalidArgument,
@@ -86,7 +69,7 @@ func checkVolumeCapabilities(volumeCapabilities []*csi.VolumeCapability) error {
 					accessMode.String())
 			}
 
-			fsType := cap.GetMount().GetFsType()
+			fsType := c.GetMount().GetFsType()
 			if fsType == "" {
 				fsType = defaultFS
 			}
@@ -105,22 +88,6 @@ func checkVolumeCapabilities(volumeCapabilities []*csi.VolumeCapability) error {
 	}
 
 	return nil
-}
-
-func isNotFound(err error) bool {
-	if zbsErr, ok := err.(*zbsError.Error); ok {
-		return zbsErr.EC() == zbs_proto.ErrorCode_ENotFound
-	}
-
-	return false
-}
-
-func isDuplicate(err error) bool {
-	if zbsErr, ok := err.(*zbsError.Error); ok {
-		return zbsErr.EC() == zbs_proto.ErrorCode_EDuplicate
-	}
-
-	return false
 }
 
 func makeListener(socketaddr string) (net.Listener, error) {
@@ -148,63 +115,6 @@ func makeListener(socketaddr string) (net.Listener, error) {
 	return listener, nil
 }
 
-func detectLunConflict(lun *zbs.ISCSILun, size uint64, sp *zbs.StoragePolicy) error {
-	err := status.Error(codes.AlreadyExists,
-		fmt.Sprintf("created lun %+v conflict with req (size: %v, sp: %+v)",
-			lun, size, sp))
-
-	if size != lun.GetSize() {
-		return err
-	}
-
-	if sp.ReplicaFactor != lun.GetReplicaNum() {
-		return err
-	}
-
-	if sp.ThinProvision != lun.GetThinProvision() {
-		return err
-	}
-
-	if sp.StripeSize != lun.GetStripeSize() {
-		return err
-	}
-
-	if sp.StripeNum != lun.GetStripeNum() {
-		return err
-	}
-
-	return nil
-}
-
-func needAuth(params map[string]string) bool {
-	auth, ok := params["auth"]
-	if ok && auth == "true" {
-		return true
-	}
-
-	return false
-}
-
-func checkIqnExist(iqns []string, iqn string) bool {
-	for i := range iqns {
-		if iqn == iqns[i] {
-			return true
-		}
-	}
-
-	return false
-}
-
-func FindInitiatorChapByIqn(initiatorChap []*meta.InitiatorChapInfo, iqn string) *meta.InitiatorChapInfo {
-	for i := range initiatorChap {
-		if iqn == string(initiatorChap[i].Iqn) {
-			return initiatorChap[i]
-		}
-	}
-
-	return nil
-}
-
 func getNodeIP() (string, error) {
 	// get NODE_IP env injected by yaml
 	nodeIP, ok := os.LookupEnv("NODE_IP")
@@ -213,11 +123,6 @@ func getNodeIP() (string, error) {
 	}
 
 	return nodeIP, nil
-}
-
-func isSingleAccessMode(accessMode csi.VolumeCapability_AccessMode_Mode) bool {
-	return accessMode == csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER ||
-		accessMode == csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY
 }
 
 func generateStagingPath(stagingTargetPath string, device string) string {
@@ -288,65 +193,6 @@ func createFile(path string) error {
 	return nil
 }
 
-func generatorIqn(nodeID string, lunUuid string) string {
-	return fmt.Sprintf("iqn.2020-05.com.iomesh:%s-%s", nodeID, lunUuid)
-}
-
-// k8s secrets -> InitiatorChapInfo
-func generatorChapInfo(secrets map[string]string, iqn string) (*zbs.InitiatorChapInfo, error) {
-	var chapInfo *zbs.InitiatorChapInfo
-
-	chapUsername, usernameExist := secrets["username"]
-	chapPassword, passwordExist := secrets["password"]
-
-	if usernameExist && passwordExist {
-		if len(chapPassword) < 12 || len(chapPassword) > 16 {
-			return nil, errors.New("Password length must be a minimum of 12 characters and a maximum of 16 characters.")
-		}
-
-		enableChap := true
-		chapInfo = &zbs.InitiatorChapInfo{
-			Iqn:      iqn,
-			ChapName: chapUsername,
-			Secret:   chapPassword,
-			Enable:   &enableChap,
-		}
-	}
-
-	return chapInfo, nil
-}
-
-// matchLabel judge if labels contains special label
-func matchLabel(labels *zbs_proto.Labels, label *zbs_proto.Label) bool {
-	if labels == nil || label == nil {
-		return false
-	}
-
-	for _, l := range labels.Labels {
-		if string(label.Key) == string(l.Key) && string(label.Value) == string(l.Value) {
-			return true
-		}
-	}
-
-	return false
-}
-
-func isBlockDevice(volumePath string) (bool, error) {
-	var stat unix.Stat_t
-	// See https://man7.org/linux/man-pages/man2/stat.2.html for details
-	err := unix.Stat(volumePath, &stat)
-	if err != nil {
-		return false, err
-	}
-
-	// See https://man7.org/linux/man-pages/man7/inode.7.html for detail
-	if (stat.Mode & unix.S_IFMT) == unix.S_IFBLK {
-		return true, nil
-	}
-
-	return false, nil
-}
-
 func getStoragePolicy(params map[string]string) (*models.VMVolumeElfStoragePolicyType, error) {
 	defaultStoragePolicy := models.VMVolumeElfStoragePolicyTypeREPLICA2THINPROVISION
 
@@ -378,8 +224,8 @@ var accessModesNeedSharing = map[csi.VolumeCapability_AccessMode_Mode]bool{
 
 func checkNeedSharing(caps []*csi.VolumeCapability) (bool, error) {
 	needSharing := false
-	for _, cap := range caps {
-		mode := cap.GetAccessMode().GetMode()
+	for _, c := range caps {
+		mode := c.GetAccessMode().GetMode()
 		sharing, ok := accessModesNeedSharing[mode]
 		if !ok {
 			return false, status.Errorf(codes.InvalidArgument,
