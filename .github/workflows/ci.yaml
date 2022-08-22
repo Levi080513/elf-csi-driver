@@ -21,8 +21,8 @@ jobs:
 
       - name: Configure git for private modules
         env:
-          TOKEN: ${{ secrets.IOMESH_ROBOT_ACCESS_TOKEN }}
-          USERNAME: ${{ secrets.IOMESH_ROBOT_USERNAME }}
+          TOKEN: ${{ secrets.CI_ACCESS_TOKEN }}
+          USERNAME: ${{ secrets.CI_USERNAME }}
         run: git config --global url."https://${USERNAME}:${TOKEN}@github.com".insteadOf "https://github.com"
 
       - name: Run golangci-lint
@@ -40,18 +40,18 @@ jobs:
           token: ${{secrets.CODECOV_UPLOAD_TOKEN}}
           file: ./coverage.txt
 
-      - name: Notify slack success
-        if: success()
-        uses: rtCamp/action-slack-notify@master
-        env:
-          SLACK_COLOR: good
-          SLACK_MESSAGE: ${{ github.event.pull_request._links.html.href }}
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+      # - name: Notify slack success
+      #   if: success()
+      #   uses: rtCamp/action-slack-notify@master
+      #   env:
+      #     SLACK_COLOR: good
+      #     SLACK_MESSAGE: ${{ github.event.pull_request._links.html.href }}
+      #     SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
 
-      - name: Notify slack fail
-        if: failure()
-        uses: rtCamp/action-slack-notify@master
-        env:
-          SLACK_COLOR: danger
-          SLACK_MESSAGE: ${{ github.event.pull_request._links.html.href }}
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+      # - name: Notify slack fail
+      #   if: failure()
+      #   uses: rtCamp/action-slack-notify@master
+      #   env:
+      #     SLACK_COLOR: danger
+      #     SLACK_MESSAGE: ${{ github.event.pull_request._links.html.href }}
+      #     SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}

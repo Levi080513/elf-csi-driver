@@ -12,8 +12,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 
-	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 	towerclient "github.com/smartxworks/cloudtower-go-sdk/v2/client"
+
+	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 )
 
 const (

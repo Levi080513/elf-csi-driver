@@ -4,8 +4,9 @@
 package driver
 
 import (
+	"crypto/rand"
 	"fmt"
-	"math/rand"
+	"math/big"
 
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -90,8 +91,11 @@ func (driver *zbsDriver) GetDynamicProvisionStorageClass(config *storageframewor
 	provisioner := driver.driverInfo.Name
 
 	var parameters map[string]string = make(map[string]string)
-	if len(driver.parameterGroups) > 0 {
-		parameters = driver.parameterGroups[rand.Intn(len(driver.parameterGroups))]
+
+	groupsNum := len(driver.parameterGroups)
+	if groupsNum > 0 {
+		r, _ := rand.Int(rand.Reader, big.NewInt(int64(groupsNum)))
+		parameters = driver.parameterGroups[int(r.Int64())]
 	}
 
 	if fsType != "" {

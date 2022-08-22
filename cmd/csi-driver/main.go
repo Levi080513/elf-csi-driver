@@ -23,6 +23,7 @@ import (
 
 	httptransport "github.com/go-openapi/runtime/client"
 	towerclient "github.com/smartxworks/cloudtower-go-sdk/v2/client"
+
 	"github.com/smartxworks/elf-csi-driver/pkg/driver"
 	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 )
@@ -122,9 +123,11 @@ func initCommonConfig(config *driver.DriverConfig) {
 	transport := httptransport.New(*cloudTowerServer, "/v2/api", []string{"http"})
 	transport.DefaultAuthentication = httptransport.APIKeyAuth("Authorization", "header", "token")
 	source := models.UserSourceLOCAL
+
 	if *cloudTowerAuthMode == "LDAP" {
 		source = models.UserSourceLDAP
 	}
+
 	towerClient, err := towerclient.NewWithUserConfig(towerclient.ClientConfig{
 		Host:     *cloudTowerServer,
 		BasePath: "v2/api",
