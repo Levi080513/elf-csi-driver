@@ -7,7 +7,12 @@ import (
 	"os"
 	"testing"
 
+	"github.com/smartxworks/elf-csi-driver/pkg/testing/mockdriver"
+
+	kubefake "k8s.io/client-go/kubernetes/fake"
+
 	"github.com/kubernetes-csi/csi-test/v3/pkg/sanity"
+	"github.com/stretchr/testify/assert"
 	"k8s.io/klog"
 
 	"github.com/smartxworks/elf-csi-driver/pkg/testing/constant"
@@ -20,11 +25,18 @@ const (
 func TestSanity(t *testing.T) {
 	klog.InitFlags(nil)
 
+	asserter := assert.New(t)
+
 	_ = os.RemoveAll(basePath)
 	_ = os.MkdirAll(basePath, os.ModePerm)
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
+
+	kubeClient := kubefake.NewSimpleClientset()
+
+	err := mockdriver.RunMockDriver(kubeClient, stopCh)
+	asserter.NoError(err)
 
 	config := sanity.NewTestConfig()
 
