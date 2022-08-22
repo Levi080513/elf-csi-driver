@@ -5,12 +5,13 @@ package driver
 
 import (
 	"fmt"
-	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
 	"net"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
+
+	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
@@ -193,14 +194,16 @@ func createFile(path string) error {
 	return nil
 }
 
-func getStoragePolicy(params map[string]string) (*models.VMVolumeElfStoragePolicyType, error) {
+func getStoragePolicy(params map[string]string) *models.VMVolumeElfStoragePolicyType {
 	defaultStoragePolicy := models.VMVolumeElfStoragePolicyTypeREPLICA2THINPROVISION
 
 	spStr, ok := params[StoragePolicy]
 	if !ok {
-		return &defaultStoragePolicy, nil
+		return &defaultStoragePolicy
 	}
+
 	sp := defaultStoragePolicy
+
 	switch spStr {
 	case "REPLICA_2_THIN_PROVISION":
 		sp = models.VMVolumeElfStoragePolicyTypeREPLICA2THINPROVISION
@@ -211,7 +214,8 @@ func getStoragePolicy(params map[string]string) (*models.VMVolumeElfStoragePolic
 	case "REPLICA_3_THICK_PROVISION":
 		sp = models.VMVolumeElfStoragePolicyTypeREPLICA3THICKPROVISION
 	}
-	return &sp, nil
+
+	return &sp
 }
 
 var accessModesNeedSharing = map[csi.VolumeCapability_AccessMode_Mode]bool{
@@ -224,18 +228,22 @@ var accessModesNeedSharing = map[csi.VolumeCapability_AccessMode_Mode]bool{
 
 func checkNeedSharing(caps []*csi.VolumeCapability) (bool, error) {
 	needSharing := false
+
 	for _, c := range caps {
 		mode := c.GetAccessMode().GetMode()
 		sharing, ok := accessModesNeedSharing[mode]
+
 		if !ok {
 			return false, status.Errorf(codes.InvalidArgument,
 				"unknown access mode %v",
 				mode.String())
 		}
+
 		if sharing {
 			needSharing = true
 			break
 		}
 	}
+
 	return needSharing, nil
 }

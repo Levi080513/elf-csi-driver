@@ -6,13 +6,14 @@ package driver
 import (
 	"context"
 	"fmt"
-	"github.com/smartxworks/cloudtower-go-sdk/v2/client/task"
-	vmdisk "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_disk"
-	"k8s.io/utils/pointer"
 	"net"
 	"net/rpc"
 	"strings"
 	"time"
+
+	"github.com/smartxworks/cloudtower-go-sdk/v2/client/task"
+	vmdisk "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_disk"
+	"k8s.io/utils/pointer"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/openlyinc/pointy"
@@ -27,15 +28,10 @@ import (
 
 const (
 	GB            = 1 << 30
-	ReplicaFactor = "replicaFactor"
-	ThinProvision = "thinProvision"
 	StoragePolicy = "storagePolicy"
 
 	defaultVolumeSize = 1 * GB
-	labelKeyName      = "k8s-cluster-id"
 )
-
-type contextKey string
 
 type controllerServer struct {
 	config   *DriverConfig
@@ -65,10 +61,7 @@ func (c *controllerServer) CreateVolume(
 
 	params := req.GetParameters()
 	clusterId := params["clusterId"]
-	sp, err := getStoragePolicy(params)
-	if err != nil {
-		return nil, err
-	}
+	sp := getStoragePolicy(params)
 
 	sharing, err := checkNeedSharing(req.GetVolumeCapabilities())
 	if err != nil {
@@ -126,7 +119,7 @@ func (c *controllerServer) createVmVolume(clusterID string, name string, storage
 	}
 
 	withTaskVMVolume := createRes.Payload[0]
-	if err := c.waitTask(withTaskVMVolume.TaskID); err != nil {
+	if err = c.waitTask(withTaskVMVolume.TaskID); err != nil {
 		return nil, err
 	}
 
@@ -160,12 +153,14 @@ func (c *controllerServer) ControllerPublishVolume(
 	}
 
 	nodeAddr := fmt.Sprintf("%v:%v", nodeEntry.NodeIP, nodeEntry.LivenessPort)
+
 	err = c.canPublishToNode(nodeAddr)
 	if err != nil {
 		return nil, err
 	}
 
 	c.keyMutex.LockKey(nodeName)
+
 	defer func() {
 		_ = c.keyMutex.UnlockKey(nodeName)
 	}()
@@ -328,6 +323,7 @@ func (c *controllerServer) DeleteVolume(
 	deleteParams.RequestBody = &models.VMVolumeDeletionParams{Where: &models.VMVolumeWhereInput{
 		ID: pointy.String(volumeID),
 	}}
+
 	deleteRes, err := c.config.TowerClient.VMVolume.DeleteVMVolumeFromVM(deleteParams)
 	if err != nil {
 		return nil, status.Error(codes.Internal,
@@ -370,6 +366,7 @@ func (c *controllerServer) ControllerUnpublishVolume(
 	}
 
 	c.keyMutex.LockKey(nodeName)
+
 	defer func() {
 		_ = c.keyMutex.UnlockKey(nodeName)
 	}()
@@ -583,18 +580,23 @@ func (c *controllerServer) waitTask(id *string) error {
 		if err != nil {
 			return err
 		}
-		if len(tasks.GetPayload()) <= 0 {
+
+		switch {
+		case !(len(tasks.GetPayload()) > 0):
 			time.Sleep(5 * time.Second)
+
 			if time.Since(start) > 1*time.Minute {
 				return fmt.Errorf("task %s not found after 1 minute", *id)
 			}
-		} else if checkTaskFinished(tasks.Payload[0]) >= 0 {
+		case checkTaskFinished(tasks.Payload[0]) >= 0:
 			if *tasks.Payload[0].Status == models.TaskStatusFAILED {
 				return fmt.Errorf("task %s failed", *id)
 			}
+
 			return nil
-		} else {
+		default:
 			time.Sleep(5 * time.Second)
+
 			if time.Since(start) > 10*time.Minute {
 				return fmt.Errorf("task %s timeout", *id)
 			}
