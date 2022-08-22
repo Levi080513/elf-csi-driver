@@ -47,7 +47,7 @@ jobs:
         shell: bash
         env:
           ZBS_CLUSTER_VIP: ${{ secrets.zbs-cluster-vip }}
-        run: helm install csi-driver deploy/csi-driver -n iomesh-system --create-namespace --set driver.metaAddr=${ZBS_CLUSTER_VIP}:10206,driver.iscsiPortal=${ZBS_CLUSTER_VIP}:3260,deploymentMode=EXTERNAL,driver.controller.replicas=1
+        run: helm install csi-driver deploy/csi-driver -n elf-csi-system --create-namespace --set deploymentMode=EXTERNAL,driver.controller.replicas=1
 
       - name: run e2e test
         shell: bash

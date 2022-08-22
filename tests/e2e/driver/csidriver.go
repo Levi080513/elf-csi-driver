@@ -5,6 +5,7 @@ package driver
 
 import (
 	"fmt"
+	"math/rand"
 
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -15,8 +16,6 @@ import (
 	e2evolume "k8s.io/kubernetes/test/e2e/framework/volume"
 	storageframework "k8s.io/kubernetes/test/e2e/storage/framework"
 	"k8s.io/kubernetes/test/e2e/storage/utils"
-
-	randutils "github.com/iomesh/zbs-client-go/utils"
 )
 
 type zbsDriver struct {
@@ -92,7 +91,7 @@ func (driver *zbsDriver) GetDynamicProvisionStorageClass(config *storageframewor
 
 	var parameters map[string]string = make(map[string]string)
 	if len(driver.parameterGroups) > 0 {
-		parameters = driver.parameterGroups[randutils.RandIntn(len(driver.parameterGroups))]
+		parameters = driver.parameterGroups[rand.Intn(len(driver.parameterGroups))]
 	}
 
 	if fsType != "" {
