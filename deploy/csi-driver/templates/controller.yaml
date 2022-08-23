@@ -48,10 +48,10 @@ spec:
             - --role=controller
             - --namespace=$(NAMESPACE)
             - --node_map={{ include "csi-driver.fullname" . }}-node-map
-            - --cloud_tower_server={{ .Values.driver.cloudTowerServer }}
-            - --cloud_tower_auth_mode={{ .Values.driver.cloudTowerAuthMode }}
-            - --cloud_tower_username={{ .Values.driver.cloudTowerUsername }}
-            - --cloud_tower_password={{ .Values.driver.cloudTowerPassword }}
+            - --cloud_tower_server=$(CLOUDTOWER_SERVER)
+            - --cloud_tower_auth_mode=$(CLOUDTOWER_AUTH_MODE)
+            - --cloud_tower_username=$(CLOUDTOWER_USERNAME)
+            - --cloud_tower_password=$(CLOUDTOWER_PASSWORD)
             - --v=1
           volumeMounts:
             - name: socket-dir
@@ -69,6 +69,26 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: CLOUDTOWER_SERVER
+              valueFrom:
+                secretKeyRef:
+                  name: cloudtower-server
+                  key: server
+            - name: CLOUDTOWER_AUTH_MODE
+              valueFrom:
+                secretKeyRef:
+                  name: cloudtower-server
+                  key: authMode
+            - name: CLOUDTOWER_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: cloudtower-server
+                  key: username
+            - name: CLOUDTOWER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cloudtower-server
+                  key: password
       {{- with .Values.driver.controller.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

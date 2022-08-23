@@ -44,7 +44,10 @@ driver:
   nameOverride: ""
   # kubernetes-cluster-idme
   clusterID: "my-cluster"
-  # CloudTower host address
+  # CloudTower Server
+  cloudtowerServer:
+    secretRef:
+      name: cloudtower-server
   cloudTowerServer: ""
   cloudTowerAuthMode: ""
   cloudTowerUsername: ""
