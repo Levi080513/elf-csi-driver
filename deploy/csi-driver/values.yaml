@@ -45,13 +45,13 @@ driver:
   # kubernetes-cluster-idme
   clusterID: "my-cluster"
   # CloudTower Server
-  cloudtowerServer:
-    secretRef:
-      name: cloudtower-server
-  cloudTowerServer: ""
-  cloudTowerAuthMode: ""
-  cloudTowerUsername: ""
-  cloudTowerPassword: ""
+  cloudTowerServer:
+    # with `true` to create Secret
+    create: false
+    server: ""
+    authMode: ""
+    username: ""
+    password: ""
 
   controller:
     # controller replicas
