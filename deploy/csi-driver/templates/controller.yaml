@@ -48,14 +48,13 @@ spec:
             - --role=controller
             - --namespace=$(NAMESPACE)
             - --node_map={{ include "csi-driver.fullname" . }}-node-map
-            - --cloud_tower_server={{ .Values.driver.cloudTowerServer }}
-            - --cloud_tower_auth_mode={{ .Values.driver.cloudTowerAuthMode }}
-            - --cloud_tower_username={{ .Values.driver.cloudTowerUsername }}
-            - --cloud_tower_password={{ .Values.driver.cloudTowerPassword }}
             - --v=1
           volumeMounts:
             - name: socket-dir
               mountPath: /csi
+            - name: cloudtower-server
+              mountPath: /etc/cloudtower-server
+              readOnly: true
           env:
             - name: NODE_NAME
               valueFrom:
@@ -80,3 +79,7 @@ spec:
       volumes:
         - name: socket-dir
           emptyDir: {}
+        - name: cloudtower-server
+          secret:
+            secretName: cloudtower-server
+            optional: false

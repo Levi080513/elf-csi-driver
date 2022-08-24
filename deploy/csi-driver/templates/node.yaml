@@ -51,10 +51,6 @@ spec:
             - --namespace=$(NAMESPACE)
             - --node_map={{ include "csi-driver.fullname" . }}-node-map
             - --liveness_port={{ .Values.driver.node.driver.ports.liveness }}
-            - --cloud_tower_server={{ .Values.driver.cloudTowerServer }}
-            - --cloud_tower_auth_mode={{ .Values.driver.cloudTowerAuthMode }}
-            - --cloud_tower_username={{ .Values.driver.cloudTowerUsername }}
-            - --cloud_tower_password={{ .Values.driver.cloudTowerPassword }}
             - --v=1
           env:
             - name: NODE_NAME

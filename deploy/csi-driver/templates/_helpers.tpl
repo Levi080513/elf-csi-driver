@@ -110,6 +110,10 @@ volumes:
   hostPath:
     path: /sys
     type: Directory
+- name: cloudtower-server
+  secret:
+    secretName: cloudtower-server
+    optional: false
 {{- end }}
 
 {{/*
@@ -135,6 +139,9 @@ volumeMounts:
   mountPath: /host/usr/lib64
 - name: sys
   mountPath: /host/sys
+- name: cloudtower-server
+  mountPath: /etc/cloudtower-server
+  readOnly: true
 {{- end }}
 
 {{/*

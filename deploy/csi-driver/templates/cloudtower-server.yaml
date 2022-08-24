@@ -1,0 +1,13 @@
+{{- if .Values.driver.cloudTowerServer.create }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudtower-server
+stringData:
+  cloudtower.yaml: |-
+    server: {{ .Values.driver.cloudTowerServer.server }}
+    authMode: {{ .Values.driver.cloudTowerServer.authMode }}
+    username: {{ .Values.driver.cloudTowerServer.username }}
+    password: {{ .Values.driver.cloudTowerServer.password }}
+    skipTLSVerify: true
+{{- end }}

@@ -44,11 +44,14 @@ driver:
   nameOverride: ""
   # kubernetes-cluster-idme
   clusterID: "my-cluster"
-  # CloudTower host address
-  cloudTowerServer: ""
-  cloudTowerAuthMode: ""
-  cloudTowerUsername: ""
-  cloudTowerPassword: ""
+  # CloudTower Server
+  cloudTowerServer:
+    # with `true` to create Secret
+    create: false
+    server: ""
+    authMode: ""
+    username: ""
+    password: ""
 
   controller:
     # controller replicas

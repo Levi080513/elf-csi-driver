@@ -6,6 +6,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"gopkg.in/yaml.v2"
 	"net/http"
 	"net/http/pprof"
 	"os"
@@ -29,7 +30,8 @@ import (
 )
 
 const (
-	version = "2.0"
+	version        = "2.0"
+	cloudTowerYaml = "/etc/cloudtower-server/cloudtower.yaml"
 )
 
 var (
@@ -41,11 +43,6 @@ var (
 	nodeMap        = flag.String("node_map", "node-map", "node configmap name")
 	kubeConfigPath = flag.String("kube_config_path", "", "kube config path, eg. $HOME/.kube/config")
 	pprofPort      = flag.Int("pprof_port", 0, "")
-
-	cloudTowerServer   = flag.String("cloud_tower_server", "", "CloudTower server ip")
-	cloudTowerAuthMode = flag.String("cloud_tower_auth_mode", "LOCAL", "CloudTower auth mode")
-	cloudTowerUsername = flag.String("cloud_tower_username", "", "CloudTower username")
-	cloudTowerPassword = flag.String("cloud_tower_password", "", "CloudTower password")
 )
 
 func main() {
@@ -112,6 +109,30 @@ func main() {
 	}
 }
 
+type CloudTowerAuthMode string
+
+func (m CloudTowerAuthMode) String() string {
+	return string(m)
+}
+
+const (
+	CloudTowerAuthLocal CloudTowerAuthMode = "LOCAL"
+	CloudTowerAuthLDAP  CloudTowerAuthMode = "LDAP"
+)
+
+type CloudTowerConnect struct {
+	// Server is the URI for CloudTower server API.
+	Server string `json:"server"`
+	// AuthMode is the authentication mode of CloudTower server.
+	AuthMode CloudTowerAuthMode `json:"authMode"`
+	// Username is the username for authenticating the CloudTower server.
+	Username string `json:"username"`
+	// Password is the password for authenticating the CloudTower server.
+	Password string `json:"password"`
+	// SkipTLSVerify indicates whether to skip verification for the TLS certificate of the CloudTower server.
+	SkipTLSVerify bool `json:"skipTLSVerify,omitempty"`
+}
+
 func initCommonConfig(config *driver.DriverConfig) {
 	config.KubeClient, config.SnapshotClient = getKClient()
 	config.DriverName = *driverName
@@ -120,21 +141,32 @@ func initCommonConfig(config *driver.DriverConfig) {
 	config.NodeMap = driver.NewNodeMap(*nodeMap, config.KubeClient.CoreV1().ConfigMaps(*namespace))
 	config.ServerAddr = *csiAddr
 
-	transport := httptransport.New(*cloudTowerServer, "/v2/api", []string{"http"})
+	cloudTower := &CloudTowerConnect{}
+
+	raw, err := os.ReadFile(cloudTowerYaml)
+	if err != nil {
+		klog.Fatalf("failed to get cloudtower yaml")
+	}
+
+	if err = yaml.Unmarshal(raw, cloudTower); err != nil {
+		klog.Fatalf("failed to parse cloudtower")
+	}
+
+	transport := httptransport.New(cloudTower.Server, "/v2/api", []string{"http"})
 	transport.DefaultAuthentication = httptransport.APIKeyAuth("Authorization", "header", "token")
 	source := models.UserSourceLOCAL
 
-	if *cloudTowerAuthMode == "LDAP" {
+	if cloudTower.AuthMode == "LDAP" {
 		source = models.UserSourceLDAP
 	}
 
 	towerClient, err := towerclient.NewWithUserConfig(towerclient.ClientConfig{
-		Host:     *cloudTowerServer,
+		Host:     cloudTower.Server,
 		BasePath: "v2/api",
 		Schemes:  []string{"http"},
 	}, towerclient.UserConfig{
-		Name:     *cloudTowerUsername,
-		Password: *cloudTowerPassword,
+		Name:     cloudTower.Username,
+		Password: cloudTower.Password,
 		Source:   source,
 	})
 
