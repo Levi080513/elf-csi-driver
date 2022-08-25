@@ -27,8 +27,8 @@ storageClass:
   # default parameters for StorageClass
   parameters:
     csi.storage.k8s.io/fstype: "ext4"
-    replicaFactor: "3"
-    thinProvision: "false"
+    replicaFactor: "2"
+    thinProvision: "true"
     elfCluster: ""
 
   reclaimPolicy: Retain
@@ -55,13 +55,17 @@ driver:
 
   controller:
     # controller replicas
-    replicas: 3
+    replicas: 2
     # use hostNetwork to access IOMesh cluster
     hostNetwork: true
     # nodeSelector of csi-controller-plugin Pod
     nodeSelector: {}
     # affinity of csi-controller-plugin Pod
     affinity: {}
+
+    tolerations:
+    - operator: Exists
+
     driver:
       # driver ports(If hostNetwork is true, ports are host ports)
       ports:
@@ -79,6 +83,10 @@ driver:
     nodeSelector: {}
     # affinity of csi-node-plugin Pod
     affinity: {}
+
+    tolerations:
+    - operator: Exists
+
     driver:
       # host ports
       ports:

@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: busybox
+  name: busybox
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: busybox
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: busybox
+    spec:
+      containers:
+      - args:
+        - -c
+        - trap 'exit 0' 15 2; echo '' > /var/lib/myapp/date.log; while true;do date | tee -a /var/lib/myapp/date.log; sleep 10 ; done
+        command:
+        - sh
+        image: busybox
+        imagePullPolicy: IfNotPresent
+        name: busybox
+        volumeMounts:
+        - mountPath: /var/lib/myapp
+          name: elf-example
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      securityContext:
+        runAsUser: 2000
+        runAsGroup: 2000
+      volumes:
+      - name: elf-example
+        persistentVolumeClaim:
+          claimName: elf-example
