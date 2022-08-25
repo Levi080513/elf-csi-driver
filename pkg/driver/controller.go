@@ -6,6 +6,7 @@ package driver
 import (
 	"context"
 	"fmt"
+	"github.com/smartxworks/cloudtower-go-sdk/v2/client/cluster"
 	"net"
 	"net/rpc"
 	"strings"
@@ -60,7 +61,7 @@ func (c *controllerServer) CreateVolume(
 	}
 
 	params := req.GetParameters()
-	clusterId := params["clusterId"]
+	clusterLocalId := params["elfCluster"]
 	sp := getStoragePolicy(params)
 
 	sharing, err := checkNeedSharing(req.GetVolumeCapabilities())
@@ -68,7 +69,7 @@ func (c *controllerServer) CreateVolume(
 		return nil, err
 	}
 
-	vmVolume, err := c.createVmVolume(clusterId, volumeName, *sp, size, sharing)
+	vmVolume, err := c.createVmVolume(clusterLocalId, volumeName, *sp, size, sharing)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +85,7 @@ func (c *controllerServer) CreateVolume(
 	}, nil
 }
 
-func (c *controllerServer) createVmVolume(clusterID string, name string, storagePolicy models.VMVolumeElfStoragePolicyType,
+func (c *controllerServer) createVmVolume(clusterLocalID string, name string, storagePolicy models.VMVolumeElfStoragePolicyType,
 	size uint64, sharing bool) (*models.VMVolume, error) {
 	getParams := vmvolume.NewGetVMVolumesParams()
 	getParams.RequestBody = &models.GetVMVolumesRequestBody{
@@ -102,10 +103,25 @@ func (c *controllerServer) createVmVolume(clusterID string, name string, storage
 		return getRes.Payload[0], nil
 	}
 
+	getClusterParams := cluster.NewGetClustersParams()
+	getClusterParams.RequestBody = &models.GetClustersRequestBody{Where: &models.ClusterWhereInput{
+		LocalID: pointy.String(clusterLocalID),
+	}}
+
+	getClusterRes, err := c.config.TowerClient.Cluster.GetClusters(getClusterParams)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(getClusterRes.Payload) == 0 {
+		return nil, status.Error(codes.InvalidArgument,
+			fmt.Sprintf("failed to get cluster with local id: %v", clusterLocalID))
+	}
+
 	createParams := vmvolume.NewCreateVMVolumeParams()
 	createParams.RequestBody = []*models.VMVolumeCreationParams{
 		{
-			ClusterID:        pointy.String(clusterID),
+			ClusterID:        getClusterRes.Payload[0].ID,
 			ElfStoragePolicy: storagePolicy.Pointer(),
 			Size:             pointy.Int64(int64(size)),
 			Name:             pointy.String(name),

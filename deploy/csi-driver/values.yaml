@@ -29,7 +29,7 @@ storageClass:
     csi.storage.k8s.io/fstype: "ext4"
     replicaFactor: "3"
     thinProvision: "false"
-    clusterId: ""
+    elfCluster: ""
 
   reclaimPolicy: Retain
   volumeBindingMode: Immediate
