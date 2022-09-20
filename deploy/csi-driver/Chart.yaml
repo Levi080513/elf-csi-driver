@@ -2,7 +2,7 @@ apiVersion: v2
 name: elf-csi-driver
 home: https://smartx.com
 description: |
-  The Elf Container Storage Interface CSI Driver provides a CSI interface
+  The SMTX OS ELF Kubernetes CSI Driver provides a CSI interface
   used by Container Orchestrators to manage the lifecycle of Elf VM volumes.
 
 # A chart can be either an 'application' or a 'library' chart.
