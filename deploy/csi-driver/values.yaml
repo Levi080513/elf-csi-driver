@@ -29,6 +29,7 @@ storageClass:
     csi.storage.k8s.io/fstype: "ext4"
     replicaFactor: "2"
     thinProvision: "true"
+    # elf cluster local ID
     elfCluster: ""
 
   reclaimPolicy: Retain
@@ -42,8 +43,7 @@ driver:
     pullPolicy: IfNotPresent
   # The unique csi driver name in a kubernetes cluster.
   nameOverride: ""
-  # kubernetes-cluster-idme
-  clusterID: "my-cluster"
+
   # CloudTower Server
   cloudTowerServer:
     # with `true` to create Secret
@@ -73,9 +73,9 @@ driver:
     resources:
       limits:
         cpu: 100m
-        memory: 150Mi
+        memory: 300Mi
       requests:
-        cpu: 100m
+        cpu: 10m
         memory: 150Mi
 
   node:
@@ -99,7 +99,7 @@ driver:
         cpu: 100m
         memory: 150Mi
       requests:
-        cpu: 100m
+        cpu: 10m
         memory: 150Mi
 
 sidecar:
