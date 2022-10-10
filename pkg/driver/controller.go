@@ -61,7 +61,7 @@ func (c *controllerServer) CreateVolume(
 	}
 
 	params := req.GetParameters()
-	clusterLocalId := params["elfCluster"]
+	clusterIdOrLocalId := params["elfCluster"]
 	sp := getStoragePolicy(params)
 
 	sharing, err := checkNeedSharing(req.GetVolumeCapabilities())
@@ -69,7 +69,7 @@ func (c *controllerServer) CreateVolume(
 		return nil, err
 	}
 
-	vmVolume, err := c.createVmVolume(clusterLocalId, volumeName, *sp, size, sharing)
+	vmVolume, err := c.createVmVolume(clusterIdOrLocalId, volumeName, *sp, size, sharing)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func (c *controllerServer) CreateVolume(
 	}, nil
 }
 
-func (c *controllerServer) createVmVolume(clusterLocalID string, name string, storagePolicy models.VMVolumeElfStoragePolicyType,
+func (c *controllerServer) createVmVolume(clusterIdOrLocalId string, name string, storagePolicy models.VMVolumeElfStoragePolicyType,
 	size uint64, sharing bool) (*models.VMVolume, error) {
 	getParams := vmvolume.NewGetVMVolumesParams()
 	getParams.RequestBody = &models.GetVMVolumesRequestBody{
@@ -105,7 +105,14 @@ func (c *controllerServer) createVmVolume(clusterLocalID string, name string, st
 
 	getClusterParams := cluster.NewGetClustersParams()
 	getClusterParams.RequestBody = &models.GetClustersRequestBody{Where: &models.ClusterWhereInput{
-		LocalID: pointy.String(clusterLocalID),
+		OR: []*models.ClusterWhereInput{
+			{
+				LocalID: pointy.String(clusterIdOrLocalId),
+			},
+			{
+				ID: pointy.String(clusterIdOrLocalId),
+			},
+		},
 	}}
 
 	getClusterRes, err := c.config.TowerClient.Cluster.GetClusters(getClusterParams)
@@ -115,7 +122,7 @@ func (c *controllerServer) createVmVolume(clusterLocalID string, name string, st
 
 	if len(getClusterRes.Payload) == 0 {
 		return nil, status.Error(codes.InvalidArgument,
-			fmt.Sprintf("failed to get cluster with local id: %v", clusterLocalID))
+			fmt.Sprintf("failed to get cluster with id or local id: %v", clusterIdOrLocalId))
 	}
 
 	createParams := vmvolume.NewCreateVMVolumeParams()
