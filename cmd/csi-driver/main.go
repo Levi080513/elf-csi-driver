@@ -43,6 +43,7 @@ var (
 	nodeMap        = flag.String("node_map", "node-map", "node configmap name")
 	kubeConfigPath = flag.String("kube_config_path", "", "kube config path, eg. $HOME/.kube/config")
 	pprofPort      = flag.Int("pprof_port", 0, "")
+	clusterID      = flag.String("cluster_id", "", "kubernetes cluster id")
 )
 
 func main() {
@@ -140,6 +141,7 @@ func initCommonConfig(config *driver.DriverConfig) {
 	config.Role = *role
 	config.NodeMap = driver.NewNodeMap(*nodeMap, config.KubeClient.CoreV1().ConfigMaps(*namespace))
 	config.ServerAddr = *csiAddr
+	config.ClusterID = *clusterID
 
 	cloudTower := &CloudTowerConnect{}
 

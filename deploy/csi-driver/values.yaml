@@ -43,7 +43,8 @@ driver:
     pullPolicy: IfNotPresent
   # The unique csi driver name in a kubernetes cluster.
   nameOverride: ""
-
+  # kubernetes-cluster-id
+  clusterID: "my-cluster"
   # CloudTower Server
   cloudTowerServer:
     # with `true` to create Secret
