@@ -6,7 +6,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"gopkg.in/yaml.v2"
 	"net/http"
 	"net/http/pprof"
 	"os"
@@ -14,16 +13,16 @@ import (
 	"syscall"
 	"time"
 
+	httptransport "github.com/go-openapi/runtime/client"
 	snapshotclientset "github.com/kubernetes-csi/external-snapshotter/client/v4/clientset/versioned"
+	towerclient "github.com/smartxworks/cloudtower-go-sdk/v2/client"
 	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
+	"gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog"
-
-	httptransport "github.com/go-openapi/runtime/client"
-	towerclient "github.com/smartxworks/cloudtower-go-sdk/v2/client"
 
 	"github.com/smartxworks/elf-csi-driver/pkg/driver"
 	"github.com/smartxworks/elf-csi-driver/pkg/utils"
@@ -43,6 +42,7 @@ var (
 	nodeMap        = flag.String("node_map", "node-map", "node configmap name")
 	kubeConfigPath = flag.String("kube_config_path", "", "kube config path, eg. $HOME/.kube/config")
 	pprofPort      = flag.Int("pprof_port", 0, "")
+	clusterID      = flag.String("cluster_id", "", "kubernetes cluster id")
 )
 
 func main() {
@@ -85,8 +85,15 @@ func main() {
 			mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 			mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 			mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
+			pprofServer := &http.Server{
+				Addr:              fmt.Sprintf(":%d", *pprofPort),
+				ReadHeaderTimeout: 32 * time.Second,
+				Handler:           mux,
+			}
+
 			wait.Until(func() {
-				if pproferr := http.ListenAndServe(fmt.Sprintf(":%d", *pprofPort), mux); pproferr != nil {
+				if pproferr := pprofServer.ListenAndServe(); pproferr != nil {
 					klog.Errorf("listen pprof failed: %v", err)
 				}
 			}, time.Second, stopCh)
@@ -115,11 +122,6 @@ func (m CloudTowerAuthMode) String() string {
 	return string(m)
 }
 
-const (
-	CloudTowerAuthLocal CloudTowerAuthMode = "LOCAL"
-	CloudTowerAuthLDAP  CloudTowerAuthMode = "LDAP"
-)
-
 type CloudTowerConnect struct {
 	// Server is the URI for CloudTower server API.
 	Server string `json:"server"`
@@ -140,6 +142,7 @@ func initCommonConfig(config *driver.DriverConfig) {
 	config.Role = *role
 	config.NodeMap = driver.NewNodeMap(*nodeMap, config.KubeClient.CoreV1().ConfigMaps(*namespace))
 	config.ServerAddr = *csiAddr
+	config.ClusterID = *clusterID
 
 	cloudTower := &CloudTowerConnect{}
 

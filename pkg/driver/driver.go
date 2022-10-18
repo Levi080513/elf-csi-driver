@@ -64,6 +64,9 @@ type DriverConfig struct {
 	// csi role
 	Role string
 
+	// kubernetes cluster id
+	ClusterID string
+
 	// node id to identify node
 	NodeID string
 	// csi grpc server listen addr

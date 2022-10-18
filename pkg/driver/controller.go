@@ -6,25 +6,26 @@ package driver
 import (
 	"context"
 	"fmt"
-	"github.com/smartxworks/cloudtower-go-sdk/v2/client/cluster"
 	"net"
 	"net/rpc"
 	"strings"
 	"time"
 
-	"github.com/smartxworks/cloudtower-go-sdk/v2/client/task"
-	vmdisk "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_disk"
-	"k8s.io/utils/pointer"
-
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/openlyinc/pointy"
-	"github.com/smartxworks/cloudtower-go-sdk/v2/client/vm"
-	vmvolume "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_volume"
-	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/keymutex"
+	"k8s.io/utils/pointer"
+
+	"github.com/smartxworks/cloudtower-go-sdk/v2/client/cluster"
+	clientlabel "github.com/smartxworks/cloudtower-go-sdk/v2/client/label"
+	"github.com/smartxworks/cloudtower-go-sdk/v2/client/task"
+	"github.com/smartxworks/cloudtower-go-sdk/v2/client/vm"
+	vmdisk "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_disk"
+	vmvolume "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_volume"
+	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
 )
 
 const (
@@ -32,6 +33,8 @@ const (
 	StoragePolicy = "storagePolicy"
 
 	defaultVolumeSize = 1 * GB
+
+	defaultClusterLabelKey = "k8s-cluster-id"
 )
 
 type controllerServer struct {
@@ -70,6 +73,11 @@ func (c *controllerServer) CreateVolume(
 	}
 
 	vmVolume, err := c.createVmVolume(clusterIdOrLocalId, volumeName, *sp, size, sharing)
+	if err != nil {
+		return nil, err
+	}
+
+	err = c.reconcileVolumeLabel(*vmVolume)
 	if err != nil {
 		return nil, err
 	}
@@ -583,6 +591,87 @@ func checkTaskFinished(task *models.Task) int8 {
 	default:
 		return -1
 	}
+}
+
+// ensure labels are ready before attaching to volumes.
+func (c *controllerServer) upsertLabel(key, value string) (*models.Label, error) {
+	getLabelParams := clientlabel.NewGetLabelsParams()
+	getLabelParams.RequestBody = &models.GetLabelsRequestBody{
+		Where: &models.LabelWhereInput{
+			Key:   &key,
+			Value: &value,
+		},
+	}
+
+	getLabelResp, err := c.config.TowerClient.Label.GetLabels(getLabelParams)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(getLabelResp.Payload) > 0 {
+		return getLabelResp.Payload[0], nil
+	}
+
+	createLabelParams := clientlabel.NewCreateLabelParams()
+	createLabelParams.RequestBody = []*models.LabelCreationParams{
+		{Key: &key, Value: &value},
+	}
+
+	createLabelResp, err := c.config.TowerClient.Label.CreateLabel(createLabelParams)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(createLabelResp.Payload) == 0 {
+		return nil, fmt.Errorf("create label for key %s value %s failed", key, value)
+	}
+
+	return createLabelResp.Payload[0].Data, nil
+}
+
+func (c *controllerServer) reconcileVolumeLabel(vmVolume models.VMVolume) error {
+	label, err := c.upsertLabel(defaultClusterLabelKey, c.config.ClusterID)
+	if err != nil {
+		return status.Error(codes.Internal, fmt.Sprintf("upsert volume label for cluster %s failed", c.config.ClusterID))
+	}
+
+	for _, vmVolumeLabel := range vmVolume.Labels {
+		if *vmVolumeLabel.ID == *label.ID {
+			return nil
+		}
+	}
+
+	err = c.addVolumeLabels(*vmVolume.ID, []string{*label.ID})
+	if err != nil {
+		return status.Error(codes.Internal, fmt.Sprintf("add label to volume %s failed", *vmVolume.ID))
+	}
+
+	return nil
+}
+
+func (c *controllerServer) addVolumeLabels(volumeID string, labels []string) error {
+	addLabelsParams := clientlabel.NewAddLabelsToResourcesParams()
+	addLabelsParams.RequestBody = &models.AddLabelsToResourcesParams{
+		Where: &models.LabelWhereInput{
+			IDIn: labels,
+		},
+		Data: &models.AddLabelsToResourcesParamsData{
+			VMVolumes: &models.VMVolumeWhereInput{
+				ID: &volumeID,
+			},
+		},
+	}
+
+	addLabelsResp, err := c.config.TowerClient.Label.AddLabelsToResources(addLabelsParams)
+	if err != nil {
+		return err
+	}
+
+	if len(addLabelsResp.Payload) == 0 {
+		return fmt.Errorf("add label to volume %s failed", volumeID)
+	}
+
+	return c.waitTask(addLabelsResp.Payload[0].TaskID)
 }
 
 func (c *controllerServer) waitTask(id *string) error {
