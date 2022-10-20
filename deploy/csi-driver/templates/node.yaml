@@ -75,7 +75,7 @@ spec:
       {{- end }}
       {{- include "csi-driver.node.volumeMounts" . | nindent 10 -}}
       {{- include "csi-driver.node.volumes" . | nindent 6 -}}
-      {{- with .Values.driver.controller.tolerations }}
+      {{- with .Values.driver.node.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}

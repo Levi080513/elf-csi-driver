@@ -166,6 +166,6 @@ smtx-{{include "csi-driver.name" .}}
 {{- if .Values.driver.nameOverride }}
 {{- .Values.driver.nameOverride }}
 {{- else -}}
-com.smartx.elf-{{ include "csi-driver.name" . }}
+com.smartx.{{ include "csi-driver.name" . }}
 {{- end }}
 {{- end }}

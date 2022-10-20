@@ -21,9 +21,9 @@ storageClass:
   create: true
   # with `true` to mark this StorageClass as default
   # more default StorageClass detail: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims
-  default: false
+  default: true
   # override the default name
-  nameOverride: "elf"
+  nameOverride: ""
   # default parameters for StorageClass
   parameters:
     csi.storage.k8s.io/fstype: "ext4"
@@ -32,7 +32,7 @@ storageClass:
     # elf cluster local ID
     elfCluster: ""
 
-  reclaimPolicy: Retain
+  reclaimPolicy: Delete
   volumeBindingMode: Immediate
   allowVolumeExpansion: true
 
