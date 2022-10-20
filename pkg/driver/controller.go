@@ -17,7 +17,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/keymutex"
 	"k8s.io/utils/pointer"
 
 	"github.com/smartxworks/cloudtower-go-sdk/v2/client/cluster"
@@ -27,6 +26,8 @@ import (
 	vmdisk "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_disk"
 	vmvolume "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_volume"
 	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
+
+	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 )
 
 const (
@@ -42,13 +43,13 @@ var ErrVMVolumeNotFound = errors.New("volume is not found")
 
 type controllerServer struct {
 	config   *DriverConfig
-	keyMutex keymutex.KeyMutex
+	keyMutex utils.KeyMutex
 }
 
 func newControllerServer(config *DriverConfig) *controllerServer {
 	return &controllerServer{
 		config:   config,
-		keyMutex: keymutex.NewHashed(0),
+		keyMutex: utils.NewKeyMutex(),
 	}
 }
 
