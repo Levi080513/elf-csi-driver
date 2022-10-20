@@ -5,6 +5,7 @@ package driver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/rpc"
@@ -36,6 +37,8 @@ const (
 
 	defaultClusterLabelKey = "k8s-cluster-id"
 )
+
+var ErrVMVolumeNotFound = errors.New("volume is not found")
 
 type controllerServer struct {
 	config   *DriverConfig
@@ -340,6 +343,10 @@ func (c *controllerServer) DeleteVolume(
 	}
 
 	volume, err := c.getVolume(volumeID)
+	if err == ErrVMVolumeNotFound {
+		return &csi.DeleteVolumeResponse{}, nil
+	}
+
 	if err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"failed to find volume %v, %v", volumeID, err)
@@ -571,7 +578,7 @@ func (c *controllerServer) getVolume(volumeID string) (*models.VMVolume, error) 
 	}
 
 	if len(getVolumeRes.Payload) < 1 {
-		return nil, fmt.Errorf("unable to get volume with ID %v", volumeID)
+		return nil, ErrVMVolumeNotFound
 	}
 
 	return getVolumeRes.Payload[0], nil
