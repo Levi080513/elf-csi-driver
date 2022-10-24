@@ -424,7 +424,7 @@ func (c *controllerServer) ControllerUnpublishVolume(
 		return nil, status.Error(codes.InvalidArgument, "nodeId is empty")
 	}
 
-	c.addDetachVolume(nodeName, volumeID)
+	c.addDetachVolume(volumeID, nodeName)
 	lock := c.keyMutex.TryLockKey(nodeName)
 	if !lock {
 		return nil, fmt.Errorf("Unpublishing volume to VM, wait for next.")
@@ -757,7 +757,7 @@ func (c *controllerServer) waitTask(id *string) error {
 	}
 }
 
-func (c *controllerServer) addAttachVolume(nodeName, volumeID string) {
+func (c *controllerServer) addAttachVolume(volumeID, nodeName string) {
 	c.attachBatchLock.Lock()
 	defer c.attachBatchLock.Unlock()
 	_, ok := c.waitVolumeAttachList[nodeName]
@@ -788,7 +788,7 @@ func (c *controllerServer) GetDetachVolumesAndReset(nodeName string) []string {
 	return volumeList
 }
 
-func (c *controllerServer) addDetachVolume(nodeName, volumeID string) {
+func (c *controllerServer) addDetachVolume(volumeID, nodeName string) {
 	c.detachBatchLock.Lock()
 	defer c.detachBatchLock.Unlock()
 	_, ok := c.waitVolumeDetachList[nodeName]
