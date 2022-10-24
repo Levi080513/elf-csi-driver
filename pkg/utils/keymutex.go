@@ -13,6 +13,7 @@ type KeyMutex interface {
 	// Acquires a lock associated with the specified ID, creates the lock if one doesn't already exist.
 	LockKey(id string)
 
+	TryLockKey(id string) bool
 	// Releases the lock associated with the specified ID.
 	// Returns an error if the specified ID doesn't exist.
 	UnlockKey(id string) error
@@ -34,6 +35,12 @@ type keyMutex struct {
 func (km *keyMutex) LockKey(id string) {
 	mutex := km.getOrCreateLock(id)
 	mutex.Lock()
+}
+
+// Acquires a lock associated with the specified ID (creates the lock if one doesn't already exist).
+func (km *keyMutex) TryLockKey(id string) bool {
+	mutex := km.getOrCreateLock(id)
+	return mutex.TryLock()
 }
 
 // Releases the lock associated with the specified ID.
