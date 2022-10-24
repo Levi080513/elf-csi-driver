@@ -54,8 +54,10 @@ type controllerServer struct {
 
 func newControllerServer(config *DriverConfig) *controllerServer {
 	return &controllerServer{
-		config:   config,
-		keyMutex: utils.NewKeyMutex(),
+		config:               config,
+		keyMutex:             utils.NewKeyMutex(),
+		waitVolumeDetachList: map[string][]string{},
+		waitVolumeAttachList: map[string][]string{},
 	}
 }
 
