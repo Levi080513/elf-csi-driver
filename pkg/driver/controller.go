@@ -248,7 +248,8 @@ func (c *controllerServer) canPublishToNode(nodeAddr string) error {
 
 func (c *controllerServer) publishVolumeToVm(volumeID string, nodeName string) error {
 	attachVolumes := c.GetAttachVolumesAndReset(nodeName)
-
+	fmt.Println("$$$")
+	fmt.Println(attachVolumes)
 	getParams := vmvolume.NewGetVMVolumesParams()
 	getParams.RequestBody = &models.GetVMVolumesRequestBody{
 		Where: &models.VMVolumeWhereInput{
@@ -275,7 +276,8 @@ func (c *controllerServer) publishVolumeToVm(volumeID string, nodeName string) e
 		}
 		waitAttachVolumes = append(waitAttachVolumes, *volume.ID)
 	}
-
+	fmt.Println("%%%")
+	fmt.Println(waitAttachVolumes)
 	getVmParams := vm.NewGetVmsParams()
 	getVmParams.RequestBody = &models.GetVmsRequestBody{
 		Where: &models.VMWhereInput{
@@ -312,6 +314,8 @@ func (c *controllerServer) publishVolumeToVm(volumeID string, nodeName string) e
 		}
 		updateParams.RequestBody.Data.VMDisks.MountDisks = append(updateParams.RequestBody.Data.VMDisks.MountDisks, mountParam)
 	}
+	fmt.Println("####")
+	fmt.Println(len(updateParams.RequestBody.Data.VMDisks.MountDisks))
 	updateRes, err := c.config.TowerClient.VM.AddVMDisk(updateParams)
 	if err != nil {
 		return err
