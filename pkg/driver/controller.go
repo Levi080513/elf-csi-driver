@@ -274,6 +274,7 @@ func (c *controllerServer) publishVolumeToVm(volumeID string, nodeName string) e
 			processLog = fmt.Sprintf("%s \n volume %s already published, corresponding vm disk: %v", processLog, *volume.ID, volume.VMDisks)
 			continue
 		}
+
 		if *volume.Mounting {
 			processLog = fmt.Sprintf("%s \nvolume %s is mounting on node %s", processLog, *volume.ID, nodeName)
 			continue
@@ -483,6 +484,7 @@ func (c *controllerServer) unpublishVolumeFromVm(volumeID string, nodeName strin
 		if vmDisk.ID == nil || *vmDisk.ID == "" {
 			return fmt.Errorf("unable to get disk ID from API in VM %v with volume %v", nodeName, volumeID)
 		}
+
 		removeVMDiskIDs = append(removeVMDiskIDs, *vmDisk.ID)
 	}
 
@@ -768,15 +770,18 @@ func (c *controllerServer) waitTask(id *string) error {
 func (c *controllerServer) addAttachVolume(volumeID, nodeName string) {
 	c.batchLock.Lock()
 	defer c.batchLock.Unlock()
+
 	_, ok := c.waitVolumeAttachList[nodeName]
 	if !ok {
 		c.waitVolumeAttachList[nodeName] = []string{}
 	}
+
 	for _, waitForAttachVolume := range c.waitVolumeAttachList[nodeName] {
 		if volumeID == waitForAttachVolume {
 			return
 		}
 	}
+
 	c.waitVolumeAttachList[nodeName] = append(c.waitVolumeAttachList[nodeName], volumeID)
 }
 
@@ -785,15 +790,16 @@ func (c *controllerServer) GetAttachVolumesAndReset(nodeName string) []string {
 	defer c.batchLock.Unlock()
 	volumeList := c.waitVolumeAttachList[nodeName]
 	c.waitVolumeDetachList[nodeName] = []string{}
+
 	return volumeList
 }
 
 func (c *controllerServer) GetDetachVolumesAndReset(nodeName string) []string {
 	c.batchLock.Lock()
 	defer c.batchLock.Unlock()
-
 	volumeList := c.waitVolumeDetachList[nodeName]
 	c.waitVolumeDetachList[nodeName] = []string{}
+
 	return volumeList
 }
 
