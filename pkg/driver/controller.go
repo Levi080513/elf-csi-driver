@@ -775,7 +775,7 @@ func (c *controllerServer) addAttachVolume(volumeID, nodeName string) {
 func (c *controllerServer) GetAttachVolumesAndReset(nodeName string) []string {
 	c.attachBatchLock.Lock()
 	defer c.attachBatchLock.Unlock()
-	volumeList := c.waitVolumeDetachList[nodeName]
+	volumeList := c.waitVolumeAttachList[nodeName]
 	c.waitVolumeDetachList[nodeName] = []string{}
 	return volumeList
 }
@@ -795,8 +795,8 @@ func (c *controllerServer) addDetachVolume(volumeID, nodeName string) {
 	if !ok {
 		c.waitVolumeDetachList[nodeName] = []string{}
 	}
-	for _, waitForAttachVolume := range c.waitVolumeDetachList[nodeName] {
-		if volumeID == waitForAttachVolume {
+	for _, waitForDetachVolume := range c.waitVolumeDetachList[nodeName] {
+		if volumeID == waitForDetachVolume {
 			return
 		}
 	}

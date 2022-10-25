@@ -17,5 +17,6 @@ func TestControllerServer_GetAttachVolumesAndReset(t *testing.T) {
 	s.addDetachVolume("test", "node1")
 	s.addDetachVolume("test", "node1")
 	s.addDetachVolume("test2", "node1")
+
 	fmt.Println(s.GetDetachVolumesAndReset("node1"))
 }
