@@ -263,21 +263,30 @@ func (c *controllerServer) publishVolumeToVm(volumeID string, nodeName string) e
 	}
 
 	if len(getRes.Payload) < 1 {
-		return fmt.Errorf("unable to get volume: %v", volumeID)
+		return fmt.Errorf("unable to get volume: %v", attachVolumes)
 	}
 
 	waitAttachVolumes := []string{}
+	processLog := ""
+
 	for _, volume := range getRes.Payload {
 		if len(volume.VMDisks) > 0 {
+			processLog = fmt.Sprintf("%s \n volume %v already published, corresponding vm disk: %v", processLog, volumeID, getRes.Payload[0].VMDisks)
 			continue
 		}
 		if *volume.Mounting {
+			processLog = fmt.Sprintf("%s \nvolume %v is mounting on node %v", processLog, volumeID, nodeName)
 			continue
 		}
 		waitAttachVolumes = append(waitAttachVolumes, *volume.ID)
 	}
+	klog.Infof("Skip volumes to mount for reason %s", processLog)
 	fmt.Println("%%%")
 	fmt.Println(waitAttachVolumes)
+	if len(waitAttachVolumes) == 0 {
+		klog.Infof("all volumes %v is mounting or published on node %v", volumeID, nodeName)
+		return nil
+	}
 	getVmParams := vm.NewGetVmsParams()
 	getVmParams.RequestBody = &models.GetVmsRequestBody{
 		Where: &models.VMWhereInput{
@@ -472,10 +481,6 @@ func (c *controllerServer) unpublishVolumeFromVm(volumeID string, nodeName strin
 			return fmt.Errorf("unable to get disk ID from API in VM %v with volume %v", nodeName, volumeID)
 		}
 		removeVMDiskIDs = append(removeVMDiskIDs, *vmDisk.ID)
-	}
-	diskId := getVmDiskRes.Payload[0].ID
-	if diskId == nil || *diskId == "" {
-		return fmt.Errorf("unable to get disk ID from API in VM %v with volume %v", nodeName, volumeID)
 	}
 
 	updateParams := vm.NewRemoveVMDiskParams()
