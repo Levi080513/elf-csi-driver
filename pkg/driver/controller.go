@@ -205,7 +205,7 @@ func (c *controllerServer) ControllerPublishVolume(
 	c.addAttachVolume(volumeID, nodeName)
 	lock := c.keyMutex.TryLockKey(nodeName)
 	if !lock {
-		return nil, fmt.Errorf("Publishing volume to VM, wait for next.")
+		return nil, fmt.Errorf("VM is updating now, record publish request and skip ")
 	}
 
 	defer func() {
@@ -427,7 +427,7 @@ func (c *controllerServer) ControllerUnpublishVolume(
 	c.addDetachVolume(volumeID, nodeName)
 	lock := c.keyMutex.TryLockKey(nodeName)
 	if !lock {
-		return nil, fmt.Errorf("Unpublishing volume to VM, wait for next.")
+		return nil, fmt.Errorf("VM is updating now, record unpublish request and skip ")
 	}
 
 	defer func() {
