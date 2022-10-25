@@ -48,8 +48,8 @@ type controllerServer struct {
 
 	waitVolumeAttachList map[string][]string
 	waitVolumeDetachList map[string][]string
-	attachBatchLock      sync.Mutex
-	detachBatchLock      sync.Mutex
+
+	batchLock sync.Mutex
 }
 
 func newControllerServer(config *DriverConfig) *controllerServer {
@@ -205,7 +205,7 @@ func (c *controllerServer) ControllerPublishVolume(
 	c.addAttachVolume(volumeID, nodeName)
 	lock := c.keyMutex.TryLockKey(nodeName)
 	if !lock {
-		return nil, fmt.Errorf("VM is updating now, record publish request and skip ")
+		return nil, fmt.Errorf("VM is updating now, record publish request and return ")
 	}
 
 	defer func() {
@@ -248,8 +248,7 @@ func (c *controllerServer) canPublishToNode(nodeAddr string) error {
 
 func (c *controllerServer) publishVolumeToVm(volumeID string, nodeName string) error {
 	attachVolumes := c.GetAttachVolumesAndReset(nodeName)
-	fmt.Println("$$$")
-	fmt.Println(attachVolumes)
+
 	getParams := vmvolume.NewGetVMVolumesParams()
 	getParams.RequestBody = &models.GetVMVolumesRequestBody{
 		Where: &models.VMVolumeWhereInput{
@@ -271,18 +270,17 @@ func (c *controllerServer) publishVolumeToVm(volumeID string, nodeName string) e
 
 	for _, volume := range getRes.Payload {
 		if len(volume.VMDisks) > 0 {
-			processLog = fmt.Sprintf("%s \n volume %v already published, corresponding vm disk: %v", processLog, volumeID, getRes.Payload[0].VMDisks)
+			processLog = fmt.Sprintf("%s \n volume %s already published, corresponding vm disk: %v", processLog, *volume.ID, volume.VMDisks)
 			continue
 		}
 		if *volume.Mounting {
-			processLog = fmt.Sprintf("%s \nvolume %v is mounting on node %v", processLog, volumeID, nodeName)
+			processLog = fmt.Sprintf("%s \nvolume %s is mounting on node %s", processLog, *volume.ID, nodeName)
 			continue
 		}
 		waitAttachVolumes = append(waitAttachVolumes, *volume.ID)
 	}
 	klog.Infof("Skip volumes to mount for reason %s", processLog)
-	fmt.Println("%%%")
-	fmt.Println(waitAttachVolumes)
+
 	if len(waitAttachVolumes) == 0 {
 		klog.Infof("all volumes %v is mounting or published on node %v", volumeID, nodeName)
 		return nil
@@ -314,6 +312,7 @@ func (c *controllerServer) publishVolumeToVm(volumeID string, nodeName string) e
 			},
 		},
 	}
+
 	for index, waitAttachVolume := range waitAttachVolumes {
 		mountParam := &models.MountDisksParams{
 			Index:      pointy.Int32(int32(index)),
@@ -323,8 +322,7 @@ func (c *controllerServer) publishVolumeToVm(volumeID string, nodeName string) e
 		}
 		updateParams.RequestBody.Data.VMDisks.MountDisks = append(updateParams.RequestBody.Data.VMDisks.MountDisks, mountParam)
 	}
-	fmt.Println("####")
-	fmt.Println(len(updateParams.RequestBody.Data.VMDisks.MountDisks))
+
 	updateRes, err := c.config.TowerClient.VM.AddVMDisk(updateParams)
 	if err != nil {
 		return err
@@ -436,7 +434,7 @@ func (c *controllerServer) ControllerUnpublishVolume(
 	c.addDetachVolume(volumeID, nodeName)
 	lock := c.keyMutex.TryLockKey(nodeName)
 	if !lock {
-		return nil, fmt.Errorf("VM is updating now, record unpublish request and skip ")
+		return nil, status.Error(codes.Internal, "VM is updating now, record unpublish request and return ")
 	}
 
 	defer func() {
@@ -471,7 +469,7 @@ func (c *controllerServer) unpublishVolumeFromVm(volumeID string, nodeName strin
 	}
 
 	if len(getVmDiskRes.Payload) < 1 {
-		klog.Infof("unable to get VM disk in VM %v with volume %v, skip the unpublish process", nodeName, volumeID)
+		klog.Infof("unable to get VM disk in VM %v with volumes %v, skip the unpublish process", nodeName, detachVolumes)
 		return nil
 	}
 
@@ -763,8 +761,8 @@ func (c *controllerServer) waitTask(id *string) error {
 }
 
 func (c *controllerServer) addAttachVolume(volumeID, nodeName string) {
-	c.attachBatchLock.Lock()
-	defer c.attachBatchLock.Unlock()
+	c.batchLock.Lock()
+	defer c.batchLock.Unlock()
 	_, ok := c.waitVolumeAttachList[nodeName]
 	if !ok {
 		c.waitVolumeAttachList[nodeName] = []string{}
@@ -778,24 +776,24 @@ func (c *controllerServer) addAttachVolume(volumeID, nodeName string) {
 }
 
 func (c *controllerServer) GetAttachVolumesAndReset(nodeName string) []string {
-	c.attachBatchLock.Lock()
-	defer c.attachBatchLock.Unlock()
+	c.batchLock.Lock()
+	defer c.batchLock.Unlock()
 	volumeList := c.waitVolumeAttachList[nodeName]
 	c.waitVolumeDetachList[nodeName] = []string{}
 	return volumeList
 }
 
 func (c *controllerServer) GetDetachVolumesAndReset(nodeName string) []string {
-	c.detachBatchLock.Lock()
-	defer c.detachBatchLock.Unlock()
+	c.batchLock.Lock()
+	defer c.batchLock.Unlock()
 	volumeList := c.waitVolumeDetachList[nodeName]
 	c.waitVolumeDetachList[nodeName] = []string{}
 	return volumeList
 }
 
 func (c *controllerServer) addDetachVolume(volumeID, nodeName string) {
-	c.detachBatchLock.Lock()
-	defer c.detachBatchLock.Unlock()
+	c.batchLock.Lock()
+	defer c.batchLock.Unlock()
 	_, ok := c.waitVolumeDetachList[nodeName]
 	if !ok {
 		c.waitVolumeDetachList[nodeName] = []string{}
