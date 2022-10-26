@@ -19,14 +19,14 @@ import (
 	"k8s.io/kubernetes/test/e2e/storage/utils"
 )
 
-type zbsDriver struct {
+type elfDriver struct {
 	driverInfo      storageframework.DriverInfo
 	rwx             bool
 	parameterGroups []map[string]string
 }
 
-// newZBSDriver returns zbsDriver that implements TestDriver interface
-func NewZBSDriver(name string, rwx bool, parameterGroups []map[string]string) storageframework.TestDriver {
+// NewELFDriver returns elfDriver that implements TestDriver interface
+func NewELFDriver(name string, rwx bool, parameterGroups []map[string]string) storageframework.TestDriver {
 	var requiredAccessModes []corev1.PersistentVolumeAccessMode
 	if rwx {
 		requiredAccessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}
@@ -34,7 +34,7 @@ func NewZBSDriver(name string, rwx bool, parameterGroups []map[string]string) st
 		requiredAccessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
 	}
 
-	return &zbsDriver{
+	return &elfDriver{
 		driverInfo: storageframework.DriverInfo{
 			Name:        name,
 			MaxFileSize: storageframework.FileSizeLarge,
@@ -50,13 +50,13 @@ func NewZBSDriver(name string, rwx bool, parameterGroups []map[string]string) st
 				storageframework.CapPersistence:         true,
 				storageframework.CapBlock:               true,
 				storageframework.CapExec:                !rwx,
-				storageframework.CapSnapshotDataSource:  true,
-				storageframework.CapPVCDataSource:       true,
-				storageframework.CapMultiPODs:           false,
+				storageframework.CapSnapshotDataSource:  false,
+				storageframework.CapPVCDataSource:       false,
+				storageframework.CapMultiPODs:           true,
 				storageframework.CapRWX:                 rwx,
-				storageframework.CapControllerExpansion: true,
-				storageframework.CapNodeExpansion:       true,
-				storageframework.CapSingleNodeVolume:    true,
+				storageframework.CapControllerExpansion: false,
+				storageframework.CapNodeExpansion:       false,
+				storageframework.CapSingleNodeVolume:    false,
 			},
 			SupportedSizeRange: e2evolume.SizeRange{
 				Min: "2Gi",
@@ -69,16 +69,16 @@ func NewZBSDriver(name string, rwx bool, parameterGroups []map[string]string) st
 	}
 }
 
-var _ storageframework.TestDriver = &zbsDriver{}
-var _ storageframework.DynamicPVTestDriver = &zbsDriver{}
-var _ storageframework.SnapshottableTestDriver = &zbsDriver{}
-var _ storageframework.AuthTestDriver = &zbsDriver{}
+var _ storageframework.TestDriver = &elfDriver{}
+var _ storageframework.DynamicPVTestDriver = &elfDriver{}
+var _ storageframework.SnapshottableTestDriver = &elfDriver{}
+var _ storageframework.AuthTestDriver = &elfDriver{}
 
-func (driver *zbsDriver) GetDriverInfo() *storageframework.DriverInfo {
+func (driver *elfDriver) GetDriverInfo() *storageframework.DriverInfo {
 	return &driver.driverInfo
 }
 
-func (driver *zbsDriver) SkipUnsupportedTest(pattern storageframework.TestPattern) {
+func (driver *elfDriver) SkipUnsupportedTest(pattern storageframework.TestPattern) {
 	if driver.rwx {
 		if pattern.VolMode != storageframework.BlockVolModeDynamicPV.VolMode {
 			e2eskipper.Skipf("Driver %v doesn't support %+v multi access", driver.driverInfo.Name, pattern)
@@ -86,7 +86,7 @@ func (driver *zbsDriver) SkipUnsupportedTest(pattern storageframework.TestPatter
 	}
 }
 
-func (driver *zbsDriver) GetDynamicProvisionStorageClass(config *storageframework.PerTestConfig,
+func (driver *elfDriver) GetDynamicProvisionStorageClass(config *storageframework.PerTestConfig,
 	fsType string) *storagev1.StorageClass {
 	provisioner := driver.driverInfo.Name
 
@@ -109,17 +109,17 @@ func (driver *zbsDriver) GetDynamicProvisionStorageClass(config *storageframewor
 	return storageframework.GetStorageClass(provisioner, parameters, nil, ns)
 }
 
-func (driver *zbsDriver) PrepareTest(f *framework.Framework) (*storageframework.PerTestConfig, func()) {
+func (driver *elfDriver) PrepareTest(f *framework.Framework) (*storageframework.PerTestConfig, func()) {
 	config := &storageframework.PerTestConfig{
 		Driver:    driver,
-		Prefix:    "zbs",
+		Prefix:    "elf",
 		Framework: f,
 	}
 
 	return config, func() {}
 }
 
-func (driver *zbsDriver) GetSnapshotClass(config *storageframework.PerTestConfig, parameters map[string]string) *unstructured.Unstructured {
+func (driver *elfDriver) GetSnapshotClass(config *storageframework.PerTestConfig, parameters map[string]string) *unstructured.Unstructured {
 	snapshotter := driver.driverInfo.Name
 	ns := config.Framework.Namespace.Name
 	suffix := fmt.Sprintf("%s-vsc", config.GetUniqueDriverName())
@@ -128,7 +128,7 @@ func (driver *zbsDriver) GetSnapshotClass(config *storageframework.PerTestConfig
 }
 
 // AuthTestDriver GetStorageClassAuthParameters interface
-func (driver *zbsDriver) GetStorageClassAuthParameters(config *storageframework.PerTestConfig) map[string]string {
+func (driver *elfDriver) GetStorageClassAuthParameters(config *storageframework.PerTestConfig) map[string]string {
 	return map[string]string{
 		"auth": "true",
 		storageframework.CSIControllerPublishSecretName.ToString(): "controller-publish-secret",
@@ -139,7 +139,7 @@ func (driver *zbsDriver) GetStorageClassAuthParameters(config *storageframework.
 }
 
 // AuthTestDriver GetAuthSecretData interface
-func (driver *zbsDriver) GetAuthSecretData() []map[string]string {
+func (driver *elfDriver) GetAuthSecretData() []map[string]string {
 	return []map[string]string{
 		{
 			"username": "iomesh-A",
@@ -153,7 +153,7 @@ func (driver *zbsDriver) GetAuthSecretData() []map[string]string {
 }
 
 // AuthTestDriver GetAuthMatchGroup interface
-func (driver *zbsDriver) GetAuthMatchGroup() [][]storageframework.CSIStorageClassAuthParamKey {
+func (driver *elfDriver) GetAuthMatchGroup() [][]storageframework.CSIStorageClassAuthParamKey {
 	return [][]storageframework.CSIStorageClassAuthParamKey{
 		{
 			storageframework.CSINodePublishSecretName,

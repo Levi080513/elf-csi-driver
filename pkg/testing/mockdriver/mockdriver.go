@@ -13,6 +13,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/smartxworks/elf-csi-driver/pkg/driver"
+	"github.com/smartxworks/elf-csi-driver/pkg/service"
 	"github.com/smartxworks/elf-csi-driver/pkg/testing/constant"
 	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 )
@@ -56,6 +57,7 @@ func RunMockDriver(kubeClient kubernetes.Interface, stopCh chan struct{}) error 
 		Resizer:        utils.NewFakeResizer(),
 		KubeClient:     kubeClient,
 		SnapshotClient: snapshotClient,
+		TowerClient:    service.NewFakeTowerService(),
 	})
 	if err != nil {
 		return err

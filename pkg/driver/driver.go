@@ -12,8 +12,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 
-	towerclient "github.com/smartxworks/cloudtower-go-sdk/v2/client"
-
+	"github.com/smartxworks/elf-csi-driver/pkg/service"
 	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 )
 
@@ -84,7 +83,7 @@ type DriverConfig struct {
 	Mount          utils.Mount   // mount utils
 	Resizer        utils.Resizer // resize utils
 
-	TowerClient *towerclient.Cloudtower
+	TowerClient service.TowerService
 }
 
 type Driver struct {

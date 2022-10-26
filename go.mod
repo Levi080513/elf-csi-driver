@@ -7,7 +7,9 @@ require (
 	github.com/evanphx/json-patch v4.11.0+incompatible // indirect
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/go-openapi/runtime v0.24.1
+	github.com/golang/mock v1.4.4
 	github.com/golang/protobuf v1.5.2
+	github.com/google/uuid v1.1.2
 	github.com/googleapis/gnostic v0.5.5 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect

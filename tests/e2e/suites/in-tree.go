@@ -4,10 +4,7 @@
 package suites
 
 import (
-	"os"
-
 	"github.com/onsi/ginkgo"
-	"k8s.io/klog"
 	storageframework "k8s.io/kubernetes/test/e2e/storage/framework"
 	"k8s.io/kubernetes/test/e2e/storage/testsuites"
 
@@ -21,49 +18,31 @@ var CSITestSuites = []func() storageframework.TestSuite{
 	testsuites.InitVolumeModeTestSuite,
 	testsuites.InitSubPathTestSuite,
 	testsuites.InitProvisioningTestSuite,
-	testsuites.InitSnapshottableTestSuite,
-	testsuites.InitVolumeExpandTestSuite,
 	testsuites.InitMultiVolumeTestSuite,
-	testsuites.InitAuthTestSuite,
-}
-
-var parameterGroups = []map[string]string{
-	{
-		"replicaFactor": "2",
-		"thinProvision": "true",
-	},
-	{
-		"replicaFactor": "3",
-		"thinProvision": "true",
-	},
-	{
-		"replicaFactor": "2",
-		"thinProvision": "false",
-	},
-	{
-		"replicaFactor": "3",
-		"thinProvision": "false",
-	},
-}
-
-func getDriverName() string {
-	driverName, ok := os.LookupEnv("DRIVER_NAME")
-	if !ok {
-		klog.Fatal("failed to get DRIVER_NAME")
-	}
-
-	return driverName
 }
 
 var _ = ginkgo.Describe("CSI Driver RWO volumes ", func() {
-	csiDriver := driver.NewZBSDriver(getDriverName(), false, parameterGroups)
+	var (
+		scParameterGroups []map[string]string
+		csiDriver         storageframework.TestDriver
+	)
+
+	scParameterGroups = NewStorageClassParameterGroups()
+	csiDriver = driver.NewELFDriver(GetDriverName(), false, scParameterGroups)
+
 	ginkgo.Context(storageframework.GetDriverNameWithFeatureTags(csiDriver), func() {
 		storageframework.DefineTestSuites(csiDriver, CSITestSuites)
 	})
 })
 
 var _ = ginkgo.Describe("CSI Driver RWX, RWO, ROX volumes", func() {
-	csiDriver := driver.NewZBSDriver(getDriverName(), true, parameterGroups)
+	var (
+		scParameterGroups []map[string]string
+		csiDriver         storageframework.TestDriver
+	)
+	scParameterGroups = NewStorageClassParameterGroups()
+	csiDriver = driver.NewELFDriver(GetDriverName(), false, scParameterGroups)
+
 	ginkgo.Context(storageframework.GetDriverNameWithFeatureTags(csiDriver), func() {
 		storageframework.DefineTestSuites(csiDriver, CSITestSuites)
 	})

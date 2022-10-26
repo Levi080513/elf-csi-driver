@@ -27,6 +27,7 @@ import (
 
 	"github.com/smartxworks/elf-csi-driver/pkg/driver"
 	"github.com/smartxworks/elf-csi-driver/pkg/feature"
+	"github.com/smartxworks/elf-csi-driver/pkg/service"
 	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 )
 
@@ -188,7 +189,7 @@ func initCommonConfig(config *driver.DriverConfig) {
 		klog.Fatalf("driver config init error, %v", err)
 	}
 
-	config.TowerClient = towerClient
+	config.TowerClient = service.NewTowerService(towerClient)
 }
 
 func initNodeConfig(config *driver.DriverConfig) {

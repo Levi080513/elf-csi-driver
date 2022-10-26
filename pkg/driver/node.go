@@ -12,18 +12,12 @@ import (
 	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/openlyinc/pointy"
+	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/klog"
 	kmount "k8s.io/utils/mount"
-	"k8s.io/utils/pointer"
-
-	iscsilun "github.com/smartxworks/cloudtower-go-sdk/v2/client/iscsi_lun"
-	vmdisk "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_disk"
-	vmvolume "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_volume"
-	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
 
 	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 )
@@ -276,7 +270,7 @@ func (n *nodeServer) NodeStageVolume(
 
 	device, err := n.getVolumeDevice(volumeID)
 	if err != nil {
-		return nil, err
+		return nil, status.Errorf(codes.InvalidArgument, fmt.Sprintf("failed to get volume device. error %s", err.Error()))
 	}
 
 	stagingPath := generateStagingPath(stagingTargetPath, volumeID)
@@ -439,26 +433,15 @@ func (n *nodeServer) NodeGetVolumeStats(
 	}
 
 	if isBlockVolume {
-		getVMVolumeParams := vmvolume.NewGetVMVolumesParams()
-		getVMVolumeParams.RequestBody = &models.GetVMVolumesRequestBody{
-			Where: &models.VMVolumeWhereInput{
-				ID: pointer.String(volumeID),
-			},
-		}
-
-		vmVolume, getVMVolumeErr := n.config.TowerClient.VMVolume.GetVMVolumes(getVMVolumeParams)
+		vmVolume, getVMVolumeErr := n.config.TowerClient.GetVMVolumeByID(volumeID)
 		if getVMVolumeErr != nil {
 			return nil, status.Error(codes.Internal, fmt.Sprintf("failed to get VM Volume %v, %v", volumeID, getVMVolumeErr))
 		}
 
-		if len(vmVolume.Payload) == 0 {
-			return nil, status.Error(codes.Internal, fmt.Sprintf("cannot find the VM Volume by id %v", volumeID))
-		}
-
 		volumeByteUsage := &csi.VolumeUsage{
-			Total:     *vmVolume.Payload[0].Size,
-			Used:      *vmVolume.Payload[0].UniqueSize,
-			Available: *vmVolume.Payload[0].Size - *vmVolume.Payload[0].UniqueSize,
+			Total:     *vmVolume.Size,
+			Used:      *vmVolume.UniqueSize,
+			Available: *vmVolume.Size - *vmVolume.UniqueSize,
 			Unit:      csi.VolumeUsage_BYTES,
 		}
 
@@ -549,7 +532,7 @@ func (n *nodeServer) NodeExpandVolume(
 		return nil, status.Error(codes.InvalidArgument, "volume id is empty")
 	}
 
-	volume, err := n.getVolume(volumeID)
+	volume, err := n.config.TowerClient.GetVMVolumeByID(volumeID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"failed to find volume %v", volumeID)
@@ -587,28 +570,16 @@ func (n *nodeServer) NodeExpandVolume(
 }
 
 func (n *nodeServer) getVMVolumeSerial(volumeID string) (*string, error) {
-	getVmDiskParams := vmdisk.NewGetVMDisksParams()
-	getVmDiskParams.RequestBody = &models.GetVMDisksRequestBody{
-		Where: &models.VMDiskWhereInput{
-			VM: &models.VMWhereInput{
-				Name: pointy.String(n.config.NodeID),
-			},
-			VMVolume: &models.VMVolumeWhereInput{
-				ID: pointer.String(volumeID),
-			},
-		},
-	}
-
-	getVmDiskRes, err := n.config.TowerClient.VMDisk.GetVMDisks(getVmDiskParams)
+	vmDisks, err := n.config.TowerClient.GetVMDisks(n.config.NodeID, []string{volumeID})
 	if err != nil {
 		return nil, err
 	}
 
-	if len(getVmDiskRes.Payload) < 1 {
-		return nil, fmt.Errorf("unable to get VM disk in VM %v with volume %v", n.config.NodeID, volumeID)
+	if len(vmDisks) == 0 {
+		return nil, fmt.Errorf("failed to get VM Disk, VM Disk is not found for volume %s node %s", volumeID, n.config.NodeID)
 	}
 
-	serial := getVmDiskRes.Payload[0].Serial
+	serial := vmDisks[0].Serial
 	if serial == nil || *serial == "" {
 		return nil, fmt.Errorf("unable to get serial from Elf API in VM %v with volume %v", n.config.NodeID, volumeID)
 	}
@@ -617,54 +588,39 @@ func (n *nodeServer) getVMVolumeSerial(volumeID string) (*string, error) {
 }
 
 func (n *nodeServer) getVMVolumeZBSVolumeID(volumeID string) (*string, error) {
-	volume, err := n.getVolume(volumeID)
+	volume, err := n.config.TowerClient.GetVMVolumeByID(volumeID)
 	if err != nil {
 		return nil, err
 	}
 
-	getISCSILunParams := iscsilun.NewGetIscsiLunsParams()
-	getISCSILunParams.RequestBody = &models.GetIscsiLunsRequestBody{
-		Where: &models.IscsiLunWhereInput{
-			ID: volume.Lun.ID,
-		},
+	if volume.Lun == nil || volume.Lun.ID == nil {
+		return nil, fmt.Errorf("volume %s Lun ID is not found", volumeID)
 	}
 
-	getIscsiLunResp, err := n.config.TowerClient.IscsiLun.GetIscsiLuns(getISCSILunParams)
+	iscsiLuns, err := n.config.TowerClient.GetISCSILuns([]string{*volume.Lun.ID})
 	if err != nil {
 		return nil, err
 	}
 
-	if len(getIscsiLunResp.Payload) == 0 {
+	if len(iscsiLuns) == 0 {
 		return nil, fmt.Errorf("failed to get iscsi lun relate volume %v with iscsi lun %v ", volumeID, volume.Lun.ID)
 	}
 
-	return getIscsiLunResp.Payload[0].ZbsVolumeID, nil
+	return iscsiLuns[0].ZbsVolumeID, nil
 }
 
 // getVolumeAttachedBus is func to get VM Bus which volume attach to.
 func (n *nodeServer) getVolumeAttachedBus(volumeID string) (models.Bus, error) {
-	getVMDiskParams := vmdisk.NewGetVMDisksParams()
-	getVMDiskParams.RequestBody = &models.GetVMDisksRequestBody{
-		Where: &models.VMDiskWhereInput{
-			VM: &models.VMWhereInput{
-				Name: pointy.String(n.config.NodeID),
-			},
-			VMVolume: &models.VMVolumeWhereInput{
-				ID: pointy.String(volumeID),
-			},
-		},
-	}
-
-	getVMDiskRes, err := n.config.TowerClient.VMDisk.GetVMDisks(getVMDiskParams)
+	vmDisks, err := n.config.TowerClient.GetVMDisks(n.config.NodeID, []string{volumeID})
 	if err != nil {
 		return "", err
 	}
 
-	if len(getVMDiskRes.Payload) == 0 {
+	if len(vmDisks) == 0 {
 		return "", fmt.Errorf("failed to get VM %v disk for volume %v", n.config.NodeID, volumeID)
 	}
 
-	disk := getVMDiskRes.Payload[0]
+	disk := vmDisks[0]
 	if disk.Bus == nil {
 		return "", fmt.Errorf("failed to get bus for disk %v", disk.ID)
 	}
@@ -718,24 +674,4 @@ func (n *nodeServer) getVolumeDevice(volumeID string) (*string, error) {
 	}
 
 	return &device, nil
-}
-
-func (n *nodeServer) getVolume(volumeID string) (*models.VMVolume, error) {
-	getVolumeParams := vmvolume.NewGetVMVolumesParams()
-	getVolumeParams.RequestBody = &models.GetVMVolumesRequestBody{
-		Where: &models.VMVolumeWhereInput{
-			ID: pointer.String(volumeID),
-		},
-	}
-
-	getVolumeRes, err := n.config.TowerClient.VMVolume.GetVMVolumes(getVolumeParams)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(getVolumeRes.Payload) < 1 {
-		return nil, fmt.Errorf("unable to get volume with ID %v", volumeID)
-	}
-
-	return getVolumeRes.Payload[0], nil
 }

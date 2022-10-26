@@ -13,21 +13,13 @@ import (
 	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/openlyinc/pointy"
+	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/pointer"
-
-	"github.com/smartxworks/cloudtower-go-sdk/v2/client/cluster"
-	clientlabel "github.com/smartxworks/cloudtower-go-sdk/v2/client/label"
-	"github.com/smartxworks/cloudtower-go-sdk/v2/client/task"
-	"github.com/smartxworks/cloudtower-go-sdk/v2/client/vm"
-	vmdisk "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_disk"
-	vmvolume "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_volume"
-	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
 
 	"github.com/smartxworks/elf-csi-driver/pkg/feature"
+	"github.com/smartxworks/elf-csi-driver/pkg/service"
 	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 )
 
@@ -120,71 +112,35 @@ func (c *controllerServer) CreateVolume(
 
 func (c *controllerServer) createVmVolume(clusterIdOrLocalId string, name string, storagePolicy models.VMVolumeElfStoragePolicyType,
 	size uint64, sharing bool) (*models.VMVolume, error) {
-	getParams := vmvolume.NewGetVMVolumesParams()
-	getParams.RequestBody = &models.GetVMVolumesRequestBody{
-		Where: &models.VMVolumeWhereInput{
-			Name: pointy.String(name),
-		},
-	}
-
-	getRes, err := c.config.TowerClient.VMVolume.GetVMVolumes(getParams)
-	if err != nil {
+	vmVolume, err := c.config.TowerClient.GetVMVolumeByName(name)
+	if err != nil && err != service.ErrVMVolumeNotFound {
 		return nil, err
 	}
 
-	if len(getRes.Payload) > 0 {
+	if err == nil {
 		// If volume is in creating, return error and wait for next requeue.
-		if isVolumeInCreating(getRes.Payload[0]) {
+		if isVolumeInCreating(vmVolume) {
 			return nil, fmt.Errorf("volume %s is creating now. wait for next requeue", name)
 		}
 
-		return getRes.Payload[0], nil
+		return vmVolume, nil
 	}
 
-	getClusterParams := cluster.NewGetClustersParams()
-	getClusterParams.RequestBody = &models.GetClustersRequestBody{Where: &models.ClusterWhereInput{
-		OR: []*models.ClusterWhereInput{
-			{
-				LocalID: pointy.String(clusterIdOrLocalId),
-			},
-			{
-				ID: pointy.String(clusterIdOrLocalId),
-			},
-		},
-	}}
-
-	getClusterRes, err := c.config.TowerClient.Cluster.GetClusters(getClusterParams)
+	createVMVolumeTask, err := c.config.TowerClient.CreateVMVolume(clusterIdOrLocalId, name, storagePolicy, size, sharing)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(getClusterRes.Payload) == 0 {
-		return nil, status.Error(codes.InvalidArgument,
-			fmt.Sprintf("failed to get cluster with id or local id: %v", clusterIdOrLocalId))
+	if err = c.waitTask(createVMVolumeTask.ID); err != nil {
+		return nil, err
 	}
 
-	createParams := vmvolume.NewCreateVMVolumeParams()
-	createParams.RequestBody = []*models.VMVolumeCreationParams{
-		{
-			ClusterID:        getClusterRes.Payload[0].ID,
-			ElfStoragePolicy: storagePolicy.Pointer(),
-			Size:             pointy.Int64(int64(size)),
-			Name:             pointy.String(name),
-			Sharing:          pointy.Bool(sharing),
-		},
-	}
-
-	createRes, err := c.config.TowerClient.VMVolume.CreateVMVolume(createParams)
+	vmVolume, err = c.config.TowerClient.GetVMVolumeByName(name)
 	if err != nil {
 		return nil, err
 	}
 
-	withTaskVMVolume := createRes.Payload[0]
-	if err = c.waitTask(withTaskVMVolume.TaskID); err != nil {
-		return nil, err
-	}
-
-	return withTaskVMVolume.Data, err
+	return vmVolume, err
 }
 
 func (c *controllerServer) ControllerPublishVolume(
@@ -272,7 +228,7 @@ func (c *controllerServer) ControllerPublishVolume(
 }
 
 func (c *controllerServer) isVolumePublishedToVM(volumeID, nodeName string) (bool, error) {
-	vmDisks, err := c.getVMDisksByVolumeIDs(nodeName, []string{volumeID})
+	vmDisks, err := c.config.TowerClient.GetVMDisks(nodeName, []string{volumeID})
 	if err != nil {
 		return true, err
 	}
@@ -319,10 +275,10 @@ func (c *controllerServer) canPublishToNode(nodeAddr string) error {
 //  2. Volume has mounted on this VM.
 //  3. Volume has mounted on other VM.
 func (c *controllerServer) publishVolumesToVm(nodeName string) ([]string, error) {
-	targetVM, err := c.getVMByName(nodeName)
+	targetVM, err := c.config.TowerClient.GetVM(nodeName)
 	// Due to Tower problems in some special cases, we may not able to get VM from Tower, but the VM is actually running well in ELF cluster and kubelet is ready.
 	// So need to return failure and let it requeue until Tower gets the VM back or the K8s node is deleted.
-	if err == ErrVMNotFound {
+	if err == service.ErrVMNotFound {
 		klog.Info(fmt.Sprintf(VMNotFoundInTowerErrorMessage, nodeName) + "marking ControllerPublishVolume as failed")
 		return nil, fmt.Errorf("failed to attach volume to VM, %s", fmt.Sprintf(VMNotFoundInTowerErrorMessage, nodeName))
 	}
@@ -359,34 +315,12 @@ func (c *controllerServer) publishVolumesToVm(nodeName string) ([]string, error)
 		needAttachVolumes = needAttachVolumes[:freeSeatsOnBus]
 	}
 
-	updateParams := vm.NewAddVMDiskParams()
-	updateParams.RequestBody = &models.VMAddDiskParams{
-		Where: &models.VMWhereInput{
-			Name: pointy.String(nodeName),
-		},
-		Data: &models.VMAddDiskParamsData{
-			VMDisks: &models.VMAddDiskParamsDataVMDisks{
-				MountDisks: []*models.MountDisksParams{},
-			},
-		},
-	}
-
-	for index, needAttachVolume := range needAttachVolumes {
-		mountParam := &models.MountDisksParams{
-			Index:      pointy.Int32(int32(index)),
-			VMVolumeID: pointy.String(needAttachVolume),
-			Boot:       pointy.Int32(int32(len(targetVM.VMDisks) + 1 + index)),
-			Bus:        &targetBus,
-		}
-		updateParams.RequestBody.Data.VMDisks.MountDisks = append(updateParams.RequestBody.Data.VMDisks.MountDisks, mountParam)
-	}
-
-	updateRes, err := c.config.TowerClient.VM.AddVMDisk(updateParams)
+	addVMDisksTask, err := c.config.TowerClient.AddVMDisks(nodeName, needAttachVolumes, targetBus)
 	if err != nil {
 		return nil, err
 	}
 
-	return needAttachVolumes, c.waitTask(updateRes.Payload[0].TaskID)
+	return needAttachVolumes, c.waitTask(addVMDisksTask.ID)
 }
 
 func (c *controllerServer) ControllerGetCapabilities(
@@ -428,8 +362,8 @@ func (c *controllerServer) DeleteVolume(
 		return nil, status.Error(codes.InvalidArgument, "volumeId is empty")
 	}
 
-	volume, err := c.getVolume(volumeID)
-	if err == ErrVMVolumeNotFound {
+	volume, err := c.config.TowerClient.GetVMVolumeByID(volumeID)
+	if err == service.ErrVMVolumeNotFound {
 		return &csi.DeleteVolumeResponse{}, nil
 	}
 
@@ -443,18 +377,13 @@ func (c *controllerServer) DeleteVolume(
 			fmt.Sprintf("volume %v is in use", volumeID))
 	}
 
-	deleteParams := vmvolume.NewDeleteVMVolumeFromVMParams()
-	deleteParams.RequestBody = &models.VMVolumeDeletionParams{Where: &models.VMVolumeWhereInput{
-		ID: pointy.String(volumeID),
-	}}
-
-	deleteRes, err := c.config.TowerClient.VMVolume.DeleteVMVolumeFromVM(deleteParams)
+	deleteVMVolumeTask, err := c.config.TowerClient.DeleteVMVolume(volumeID)
 	if err != nil {
 		return nil, status.Error(codes.Internal,
 			fmt.Sprintf("failed to delete volume %v, %v", volumeID, err))
 	}
 
-	err = c.waitTask(deleteRes.Payload[0].TaskID)
+	err = c.waitTask(deleteVMVolumeTask.ID)
 	if err != nil {
 		return nil, status.Error(codes.Internal,
 			fmt.Sprintf("delete volume %v task failed, %v", volumeID, err))
@@ -536,12 +465,12 @@ func (c *controllerServer) ControllerUnpublishVolume(
 
 // unpublishVolumesFromVm is the batch func to detach disk from VM.
 func (c *controllerServer) unpublishVolumesFromVm(nodeName string) error {
-	targetVM, err := c.getVMByName(nodeName)
+	targetVM, err := c.config.TowerClient.GetVM(nodeName)
 	// Tower will keep volumes which has attached to this VM and created by ELF CSI after this VM delete,
 	// so if VM is not present in SMTX OS ELF or moved to the recycle bin,
 	// means volume has already detached from this VM,
 	// so marking ControllerUnpublishVolume as successful.
-	if err == ErrVMNotFound {
+	if err == service.ErrVMNotFound {
 		klog.Info(fmt.Sprintf(VMNotFoundInTowerErrorMessage, nodeName) + "marking ControllerUnpublishVolume as successful")
 		return nil
 	}
@@ -558,7 +487,7 @@ func (c *controllerServer) unpublishVolumesFromVm(nodeName string) error {
 		return nil
 	}
 
-	vmDisks, err := c.getVMDisksByVolumeIDs(nodeName, detachVolumes)
+	vmDisks, err := c.config.TowerClient.GetVMDisks(nodeName, detachVolumes)
 	if err != nil {
 		return err
 	}
@@ -578,22 +507,12 @@ func (c *controllerServer) unpublishVolumesFromVm(nodeName string) error {
 		removeVMDiskIDs = append(removeVMDiskIDs, *vmDisk.ID)
 	}
 
-	updateParams := vm.NewRemoveVMDiskParams()
-	updateParams.RequestBody = &models.VMRemoveDiskParams{
-		Where: &models.VMWhereInput{
-			Name: pointy.String(nodeName),
-		},
-		Data: &models.VMRemoveDiskParamsData{
-			DiskIds: removeVMDiskIDs,
-		},
-	}
-
-	updateRes, err := c.config.TowerClient.VM.RemoveVMDisk(updateParams)
+	removeVMDiskTask, err := c.config.TowerClient.RemoveVMDisks(nodeName, removeVMDiskIDs)
 	if err != nil {
 		return err
 	}
 
-	return c.waitTask(updateRes.Payload[0].TaskID)
+	return c.waitTask(removeVMDiskTask.ID)
 }
 
 func (c *controllerServer) ValidateVolumeCapabilities(
@@ -609,7 +528,7 @@ func (c *controllerServer) ValidateVolumeCapabilities(
 		return nil, err
 	}
 
-	_, err = c.getVolume(volumeID)
+	_, err = c.config.TowerClient.GetVMVolumeByID(volumeID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"failed to find volume %v, %v", volumeID, err)
@@ -674,7 +593,7 @@ func (c *controllerServer) ControllerExpandVolume(
 		return nil, err
 	}
 
-	volume, err := c.getVolume(volumeID)
+	volume, err := c.config.TowerClient.GetVMVolumeByID(volumeID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"failed to find volume %v, %v", volumeID, err)
@@ -697,27 +616,6 @@ func (c *controllerServer) ControllerExpandVolume(
 	}, nil
 }
 
-// TODO(tower): re-use this function with node driver
-func (c *controllerServer) getVolume(volumeID string) (*models.VMVolume, error) {
-	getVolumeParams := vmvolume.NewGetVMVolumesParams()
-	getVolumeParams.RequestBody = &models.GetVMVolumesRequestBody{
-		Where: &models.VMVolumeWhereInput{
-			ID: pointer.String(volumeID),
-		},
-	}
-
-	getVolumeRes, err := c.config.TowerClient.VMVolume.GetVMVolumes(getVolumeParams)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(getVolumeRes.Payload) < 1 {
-		return nil, ErrVMVolumeNotFound
-	}
-
-	return getVolumeRes.Payload[0], nil
-}
-
 // TODO(tower): impl this when sdk updated
 func (c *controllerServer) expandVolume(volumeID string, newSize int64) error {
 	return nil
@@ -736,38 +634,31 @@ func checkTaskFinished(task *models.Task) int8 {
 
 // ensure labels are ready before attaching to volumes.
 func (c *controllerServer) upsertLabel(key, value string) (*models.Label, error) {
-	getLabelParams := clientlabel.NewGetLabelsParams()
-	getLabelParams.RequestBody = &models.GetLabelsRequestBody{
-		Where: &models.LabelWhereInput{
-			Key:   &key,
-			Value: &value,
-		},
+	label, err := c.config.TowerClient.GetLabel(key, value)
+	if err != nil && err != service.ErrLabelNotFound {
+		return nil, err
 	}
 
-	getLabelResp, err := c.config.TowerClient.Label.GetLabels(getLabelParams)
+	if err == nil {
+		return label, nil
+	}
+
+	createLabelTask, err := c.config.TowerClient.CreateLabel(key, value)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(getLabelResp.Payload) > 0 {
-		return getLabelResp.Payload[0], nil
-	}
-
-	createLabelParams := clientlabel.NewCreateLabelParams()
-	createLabelParams.RequestBody = []*models.LabelCreationParams{
-		{Key: &key, Value: &value},
-	}
-
-	createLabelResp, err := c.config.TowerClient.Label.CreateLabel(createLabelParams)
+	err = c.waitTask(createLabelTask.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(createLabelResp.Payload) == 0 {
-		return nil, fmt.Errorf("create label for key %s value %s failed", key, value)
+	label, err = c.config.TowerClient.GetLabel(key, value)
+	if err != nil {
+		return nil, err
 	}
 
-	return createLabelResp.Payload[0].Data, nil
+	return label, nil
 }
 
 func (c *controllerServer) reconcileVolumeLabel(vmVolume models.VMVolume) error {
@@ -818,28 +709,12 @@ func (c *controllerServer) reconcileVolumeLabel(vmVolume models.VMVolume) error 
 }
 
 func (c *controllerServer) addVolumeLabels(volumeID string, labels []string) error {
-	addLabelsParams := clientlabel.NewAddLabelsToResourcesParams()
-	addLabelsParams.RequestBody = &models.AddLabelsToResourcesParams{
-		Where: &models.LabelWhereInput{
-			IDIn: labels,
-		},
-		Data: &models.AddLabelsToResourcesParamsData{
-			VMVolumes: &models.VMVolumeWhereInput{
-				ID: &volumeID,
-			},
-		},
-	}
-
-	addLabelsResp, err := c.config.TowerClient.Label.AddLabelsToResources(addLabelsParams)
+	addLabelsTask, err := c.config.TowerClient.AddLabelsToVolume(volumeID, labels)
 	if err != nil {
 		return err
 	}
 
-	if len(addLabelsResp.Payload) == 0 {
-		return fmt.Errorf("add label to volume %s failed", volumeID)
-	}
-
-	return c.waitTask(addLabelsResp.Payload[0].TaskID)
+	return c.waitTask(addLabelsTask.ID)
 }
 
 func (c *controllerServer) waitTask(id *string) error {
@@ -848,28 +723,22 @@ func (c *controllerServer) waitTask(id *string) error {
 	}
 
 	start := time.Now()
-	taskParams := task.NewGetTasksParams()
-	taskParams.RequestBody = &models.GetTasksRequestBody{
-		Where: &models.TaskWhereInput{
-			ID: id,
-		},
-	}
 
 	for {
-		tasks, err := c.config.TowerClient.Task.GetTasks(taskParams)
-		if err != nil {
+		task, err := c.config.TowerClient.GetTask(*id)
+		if err != nil && err != service.ErrTaskNotFound {
 			return err
 		}
 
 		switch {
-		case !(len(tasks.GetPayload()) > 0):
+		case err == service.ErrTaskNotFound:
 			time.Sleep(5 * time.Second)
 
 			if time.Since(start) > 1*time.Minute {
 				return fmt.Errorf("task %s not found after 1 minute", *id)
 			}
-		case checkTaskFinished(tasks.Payload[0]) >= 0:
-			if *tasks.Payload[0].Status == models.TaskStatusFAILED {
+		case checkTaskFinished(task) >= 0:
+			if *task.Status == models.TaskStatusFAILED {
 				return fmt.Errorf("task %s failed", *id)
 			}
 
@@ -896,20 +765,11 @@ func (c *controllerServer) filterNeedAttachVolumes(volumeIDsToBeAttached []strin
 
 	// Get all volumes to be attached to this VM by volume IDs in volumesToBeAttached.
 	// It will not include the volumes which are not found in Tower.
-	var volumesToBeAttached []*models.VMVolume
-	getVMVolumeParams := vmvolume.NewGetVMVolumesParams()
-	getVMVolumeParams.RequestBody = &models.GetVMVolumesRequestBody{
-		Where: &models.VMVolumeWhereInput{
-			IDIn: volumeIDsToBeAttached,
-		},
-	}
-
-	getVMVolumesRes, err := c.config.TowerClient.VMVolume.GetVMVolumes(getVMVolumeParams)
+	volumesToBeAttached, err := c.config.TowerClient.GetVMVolumesByID(volumeIDsToBeAttached)
 	if err != nil {
 		return nil, err
 	}
 
-	volumesToBeAttached = getVMVolumesRes.Payload
 	if len(volumesToBeAttached) == 0 {
 		// Return early when all volumes to be attached to this VM are not found in Tower.
 		klog.Infof("All volumes %v to be attached to VM %s are not found in Tower", volumeIDsToBeAttached, vm.Name)
@@ -933,7 +793,7 @@ func (c *controllerServer) filterNeedAttachVolumes(volumeIDsToBeAttached []strin
 	}
 
 	// Get all VMDisks of this VM related to the volumes to be attached.
-	vmDisks, err := c.getVMDisksByVolumeIDs(*vm.Name, volumeIDsToBeAttached)
+	vmDisks, err := c.config.TowerClient.GetVMDisks(*vm.Name, volumeIDsToBeAttached)
 	if err != nil {
 		return nil, err
 	}
@@ -978,7 +838,7 @@ func (c *controllerServer) filterNeedAttachVolumes(volumeIDsToBeAttached []strin
 
 // GetAvailableBusForVolumes returns the available VM bus to which new volumes can be attached and the free seats on this bus.
 func (c *controllerServer) GetAvailableBusForVolumes(vm *models.VM) (models.Bus, int, error) {
-	vmDisks, err := c.getVMDisksByVolumeIDs(*vm.Name, []string{})
+	vmDisks, err := c.config.TowerClient.GetVMDisks(*vm.Name, []string{})
 	if err != nil {
 		return "", 0, err
 	}
@@ -1016,46 +876,4 @@ func (c *controllerServer) GetAvailableBusForVolumes(vm *models.VM) (models.Bus,
 	}
 
 	return "", 0, fmt.Errorf("failed to find available VM Bus because all VM Buses are full")
-}
-
-func (c *controllerServer) getVMByName(vmName string) (*models.VM, error) {
-	getVmParams := vm.NewGetVmsParams()
-	getVmParams.RequestBody = &models.GetVmsRequestBody{
-		Where: &models.VMWhereInput{
-			Name: pointy.String(vmName),
-		},
-	}
-
-	getVMRes, err := c.config.TowerClient.VM.GetVms(getVmParams)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(getVMRes.Payload) == 0 {
-		return nil, ErrVMNotFound
-	}
-
-	return getVMRes.Payload[0], nil
-}
-
-// getVMDisksByVolumeIDs func will return all VM Disk in this VM when volumeIDs length is 0.
-func (c *controllerServer) getVMDisksByVolumeIDs(nodeName string, volumeIDs []string) ([]*models.VMDisk, error) {
-	getVMDiskParams := vmdisk.NewGetVMDisksParams()
-	getVMDiskParams.RequestBody = &models.GetVMDisksRequestBody{
-		Where: &models.VMDiskWhereInput{
-			VM: &models.VMWhereInput{
-				Name: pointy.String(nodeName),
-			},
-			VMVolume: &models.VMVolumeWhereInput{
-				IDIn: volumeIDs,
-			},
-		},
-	}
-
-	getVMDiskRes, err := c.config.TowerClient.VMDisk.GetVMDisks(getVMDiskParams)
-	if err != nil {
-		return nil, err
-	}
-
-	return getVMDiskRes.Payload, nil
 }

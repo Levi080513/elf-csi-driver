@@ -1,7 +1,7 @@
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: elf-csi-driver-delete
+  name: com.smartx.elf-csi-driver
 parameters:
   csi.storage.k8s.io/fstype: ext4
   replicaFactor: "2"
