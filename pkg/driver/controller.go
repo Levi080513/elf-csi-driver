@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/rpc"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -44,12 +45,19 @@ var ErrVMVolumeNotFound = errors.New("volume is not found")
 type controllerServer struct {
 	config   *DriverConfig
 	keyMutex utils.KeyMutex
+
+	volumeAttachList map[string][]string
+	volumeDetachList map[string][]string
+
+	batchLock sync.Mutex
 }
 
 func newControllerServer(config *DriverConfig) *controllerServer {
 	return &controllerServer{
-		config:   config,
-		keyMutex: utils.NewKeyMutex(),
+		config:           config,
+		keyMutex:         utils.NewKeyMutex(),
+		volumeAttachList: map[string][]string{},
+		volumeDetachList: map[string][]string{},
 	}
 }
 
@@ -194,13 +202,18 @@ func (c *controllerServer) ControllerPublishVolume(
 		return nil, err
 	}
 
-	c.keyMutex.LockKey(nodeName)
+	c.addAttachVolume(volumeID, nodeName)
+
+	lock := c.keyMutex.TryLockKey(nodeName)
+	if !lock {
+		return nil, fmt.Errorf("VM is updating now, record publish request and return ")
+	}
 
 	defer func() {
 		_ = c.keyMutex.UnlockKey(nodeName)
 	}()
 
-	if err := c.publishVolumeToVm(volumeID, nodeName); err != nil {
+	if err := c.publishVolumesToVm(nodeName); err != nil {
 		return nil, err
 	}
 
@@ -234,11 +247,17 @@ func (c *controllerServer) canPublishToNode(nodeAddr string) error {
 	return nil
 }
 
-func (c *controllerServer) publishVolumeToVm(volumeID string, nodeName string) error {
+func (c *controllerServer) publishVolumesToVm(nodeName string) error {
+	attachVolumes := c.GetAttachVolumesAndReset(nodeName)
+
+	if len(attachVolumes) == 0 {
+		return nil
+	}
+
 	getParams := vmvolume.NewGetVMVolumesParams()
 	getParams.RequestBody = &models.GetVMVolumesRequestBody{
 		Where: &models.VMVolumeWhereInput{
-			ID: pointy.String(volumeID),
+			IDIn: attachVolumes,
 		},
 	}
 
@@ -248,16 +267,30 @@ func (c *controllerServer) publishVolumeToVm(volumeID string, nodeName string) e
 	}
 
 	if len(getRes.Payload) < 1 {
-		return fmt.Errorf("unable to get volume: %v", volumeID)
+		return fmt.Errorf("unable to get volume: %v", attachVolumes)
 	}
 
-	if len(getRes.Payload[0].VMDisks) > 0 {
-		klog.Infof("volume %v already published, corresponding vm disk: %v", volumeID, getRes.Payload[0].VMDisks)
-		return nil
+	waitAttachVolumes := []string{}
+	skipReason := ""
+
+	for _, volume := range getRes.Payload {
+		if len(volume.VMDisks) > 0 {
+			skipReason = fmt.Sprintf("%s \n volume %s already published, corresponding vm disk: %v", skipReason, *volume.ID, volume.VMDisks)
+			continue
+		}
+
+		if *volume.Mounting {
+			skipReason = fmt.Sprintf("%s \nvolume %s is mounting on node %s", skipReason, *volume.ID, nodeName)
+			continue
+		}
+
+		waitAttachVolumes = append(waitAttachVolumes, *volume.ID)
 	}
 
-	if *getRes.Payload[0].Mounting {
-		klog.Infof("volume %v is mounting on node %v", volumeID, nodeName)
+	klog.Infof("Skip volumes for reason %s", skipReason)
+
+	if len(waitAttachVolumes) == 0 {
+		klog.Infof("all volumes %v is mounting or published on node %v", attachVolumes, nodeName)
 		return nil
 	}
 
@@ -284,16 +317,19 @@ func (c *controllerServer) publishVolumeToVm(volumeID string, nodeName string) e
 		},
 		Data: &models.VMAddDiskParamsData{
 			VMDisks: &models.VMAddDiskParamsDataVMDisks{
-				MountDisks: []*models.MountDisksParams{
-					{
-						Index:      pointy.Int32(0),
-						VMVolumeID: pointy.String(volumeID),
-						Boot:       pointy.Int32(int32(len(getVMRes.Payload[0].VMDisks) + 1)),
-						Bus:        models.BusVIRTIO.Pointer(),
-					},
-				},
+				MountDisks: []*models.MountDisksParams{},
 			},
 		},
+	}
+
+	for index, waitAttachVolume := range waitAttachVolumes {
+		mountParam := &models.MountDisksParams{
+			Index:      pointy.Int32(int32(index)),
+			VMVolumeID: pointy.String(waitAttachVolume),
+			Boot:       pointy.Int32(int32(len(getVMRes.Payload[0].VMDisks) + 1 + index)),
+			Bus:        models.BusVIRTIO.Pointer(),
+		}
+		updateParams.RequestBody.Data.VMDisks.MountDisks = append(updateParams.RequestBody.Data.VMDisks.MountDisks, mountParam)
 	}
 
 	updateRes, err := c.config.TowerClient.VM.AddVMDisk(updateParams)
@@ -404,20 +440,31 @@ func (c *controllerServer) ControllerUnpublishVolume(
 		return nil, status.Error(codes.InvalidArgument, "nodeId is empty")
 	}
 
-	c.keyMutex.LockKey(nodeName)
+	c.addDetachVolume(volumeID, nodeName)
+
+	lock := c.keyMutex.TryLockKey(nodeName)
+	if !lock {
+		return nil, status.Error(codes.Internal, "VM is updating now, record unpublish request and return ")
+	}
 
 	defer func() {
 		_ = c.keyMutex.UnlockKey(nodeName)
 	}()
 
-	if err := c.unpublishVolumeFromVm(volumeID, nodeName); err != nil {
+	if err := c.unpublishVolumesFromVm(nodeName); err != nil {
 		return nil, err
 	}
 
 	return &csi.ControllerUnpublishVolumeResponse{}, nil
 }
 
-func (c *controllerServer) unpublishVolumeFromVm(volumeID string, nodeName string) error {
+func (c *controllerServer) unpublishVolumesFromVm(nodeName string) error {
+	detachVolumes := c.GetDetachVolumesAndReset(nodeName)
+
+	if len(detachVolumes) == 0 {
+		return nil
+	}
+
 	getVmDiskParams := vmdisk.NewGetVMDisksParams()
 	getVmDiskParams.RequestBody = &models.GetVMDisksRequestBody{
 		Where: &models.VMDiskWhereInput{
@@ -425,7 +472,7 @@ func (c *controllerServer) unpublishVolumeFromVm(volumeID string, nodeName strin
 				Name: pointy.String(nodeName),
 			},
 			VMVolume: &models.VMVolumeWhereInput{
-				ID: pointer.String(volumeID),
+				IDIn: detachVolumes,
 			},
 		},
 	}
@@ -436,13 +483,18 @@ func (c *controllerServer) unpublishVolumeFromVm(volumeID string, nodeName strin
 	}
 
 	if len(getVmDiskRes.Payload) < 1 {
-		klog.Infof("unable to get VM disk in VM %v with volume %v, skip the unpublish process", nodeName, volumeID)
+		klog.Infof("unable to get VM disk in VM %v with volumes %v, skip the unpublish process", nodeName, detachVolumes)
 		return nil
 	}
 
-	diskId := getVmDiskRes.Payload[0].ID
-	if diskId == nil || *diskId == "" {
-		return fmt.Errorf("unable to get disk ID from API in VM %v with volume %v", nodeName, volumeID)
+	removeVMDiskIDs := []string{}
+
+	for _, vmDisk := range getVmDiskRes.Payload {
+		if vmDisk.ID == nil || *vmDisk.ID == "" {
+			return fmt.Errorf("unable to get disk ID from API in VM %v with volume %v", nodeName, vmDisk.ID)
+		}
+
+		removeVMDiskIDs = append(removeVMDiskIDs, *vmDisk.ID)
 	}
 
 	updateParams := vm.NewRemoveVMDiskParams()
@@ -451,7 +503,7 @@ func (c *controllerServer) unpublishVolumeFromVm(volumeID string, nodeName strin
 			Name: pointy.String(nodeName),
 		},
 		Data: &models.VMRemoveDiskParamsData{
-			DiskIds: []string{*diskId},
+			DiskIds: removeVMDiskIDs,
 		},
 	}
 
@@ -722,4 +774,58 @@ func (c *controllerServer) waitTask(id *string) error {
 			}
 		}
 	}
+}
+
+func (c *controllerServer) addAttachVolume(volumeID, nodeName string) {
+	c.batchLock.Lock()
+	defer c.batchLock.Unlock()
+
+	_, ok := c.volumeAttachList[nodeName]
+	if !ok {
+		c.volumeAttachList[nodeName] = []string{}
+	}
+
+	for _, attachVolume := range c.volumeAttachList[nodeName] {
+		if volumeID == attachVolume {
+			return
+		}
+	}
+
+	c.volumeAttachList[nodeName] = append(c.volumeAttachList[nodeName], volumeID)
+}
+
+func (c *controllerServer) GetAttachVolumesAndReset(nodeName string) []string {
+	c.batchLock.Lock()
+	defer c.batchLock.Unlock()
+	volumeList := c.volumeAttachList[nodeName]
+	c.volumeAttachList[nodeName] = []string{}
+
+	return volumeList
+}
+
+func (c *controllerServer) GetDetachVolumesAndReset(nodeName string) []string {
+	c.batchLock.Lock()
+	defer c.batchLock.Unlock()
+	volumeList := c.volumeDetachList[nodeName]
+	c.volumeDetachList[nodeName] = []string{}
+
+	return volumeList
+}
+
+func (c *controllerServer) addDetachVolume(volumeID, nodeName string) {
+	c.batchLock.Lock()
+	defer c.batchLock.Unlock()
+
+	_, ok := c.volumeDetachList[nodeName]
+	if !ok {
+		c.volumeDetachList[nodeName] = []string{}
+	}
+
+	for _, detachVolume := range c.volumeDetachList[nodeName] {
+		if volumeID == detachVolume {
+			return
+		}
+	}
+
+	c.volumeDetachList[nodeName] = append(c.volumeDetachList[nodeName], volumeID)
 }
