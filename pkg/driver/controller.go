@@ -296,8 +296,9 @@ func (c *controllerServer) publishVolumesToVm(nodeName string) error {
 	skipReason := ""
 
 	for _, volume := range getRes.Payload {
-		if len(volume.VMDisks) < 0 {
+		if len(volume.VMDisks) <= 0 {
 			waitAttachVolumes = append(waitAttachVolumes, *volume.ID)
+			continue
 		}
 
 		if _, ok := mountVMDisk[*volume.VMDisks[0].ID]; !ok {
