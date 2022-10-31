@@ -302,7 +302,8 @@ func (c *controllerServer) publishVolumesToVm(nodeName string) error {
 		}
 
 		if _, ok := mountVMDisk[*volume.VMDisks[0].ID]; !ok {
-			return fmt.Errorf("volume %s is alreay in other vm", *volume.ID)
+			skipReason = fmt.Sprintf("%s \n volume %s is alreay in other vm", skipReason, *volume.ID)
+			continue
 		}
 
 		skipReason = fmt.Sprintf("%s \n volume %s already published, corresponding vm disk: %v", skipReason, *volume.ID, volume.VMDisks)
