@@ -38,6 +38,8 @@ const (
 	defaultVolumeSize = 1 * GB
 
 	defaultClusterLabelKey = "k8s-cluster-id"
+
+	defaultSystemClusterLabelKey = "system.cloudtower/k8s-cluster-id"
 )
 
 var ErrVMVolumeNotFound = errors.New("volume is not found")
@@ -696,18 +698,36 @@ func (c *controllerServer) upsertLabel(key, value string) (*models.Label, error)
 }
 
 func (c *controllerServer) reconcileVolumeLabel(vmVolume models.VMVolume) error {
-	label, err := c.upsertLabel(defaultClusterLabelKey, c.config.ClusterID)
+	commonClusterIDLabel, err := c.upsertLabel(defaultClusterLabelKey, c.config.ClusterID)
 	if err != nil {
-		return status.Error(codes.Internal, fmt.Sprintf("upsert volume label for cluster %s failed", c.config.ClusterID))
+		return status.Error(codes.Internal, fmt.Sprintf("upsert volume label %s for cluster %s failed", defaultClusterLabelKey, c.config.ClusterID))
 	}
 
+	systemClusterIDLabel, err := c.upsertLabel(defaultSystemClusterLabelKey, c.config.ClusterID)
+	if err != nil {
+		return status.Error(codes.Internal, fmt.Sprintf("upsert volume label %s for cluster %s failed", defaultSystemClusterLabelKey, c.config.ClusterID))
+	}
+
+	addLabelIDs := []string{}
+
+	vmLabelMap := make(map[string]bool)
 	for _, vmVolumeLabel := range vmVolume.Labels {
-		if *vmVolumeLabel.ID == *label.ID {
-			return nil
-		}
+		vmLabelMap[*vmVolumeLabel.ID] = true
 	}
 
-	err = c.addVolumeLabels(*vmVolume.ID, []string{*label.ID})
+	if _, ok := vmLabelMap[*commonClusterIDLabel.ID]; !ok {
+		addLabelIDs = append(addLabelIDs, *commonClusterIDLabel.ID)
+	}
+
+	if _, ok := vmLabelMap[*systemClusterIDLabel.ID]; !ok {
+		addLabelIDs = append(addLabelIDs, *systemClusterIDLabel.ID)
+	}
+
+	if len(addLabelIDs) == 0 {
+		return nil
+	}
+
+	err = c.addVolumeLabels(*vmVolume.ID, addLabelIDs)
 	if err != nil {
 		return status.Error(codes.Internal, fmt.Sprintf("add label to volume %s failed", *vmVolume.ID))
 	}
