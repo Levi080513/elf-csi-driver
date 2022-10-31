@@ -270,30 +270,6 @@ func (c *controllerServer) publishVolumesToVm(nodeName string) error {
 		return fmt.Errorf("unable to get volume: %v", attachVolumes)
 	}
 
-	waitAttachVolumes := []string{}
-	skipReason := ""
-
-	for _, volume := range getRes.Payload {
-		if len(volume.VMDisks) > 0 {
-			skipReason = fmt.Sprintf("%s \n volume %s already published, corresponding vm disk: %v", skipReason, *volume.ID, volume.VMDisks)
-			continue
-		}
-
-		if *volume.Mounting {
-			skipReason = fmt.Sprintf("%s \nvolume %s is mounting on node %s", skipReason, *volume.ID, nodeName)
-			continue
-		}
-
-		waitAttachVolumes = append(waitAttachVolumes, *volume.ID)
-	}
-
-	klog.Infof("Skip volumes for reason %s", skipReason)
-
-	if len(waitAttachVolumes) == 0 {
-		klog.Infof("all volumes %v is mounting or published on node %v", attachVolumes, nodeName)
-		return nil
-	}
-
 	getVmParams := vm.NewGetVmsParams()
 	getVmParams.RequestBody = &models.GetVmsRequestBody{
 		Where: &models.VMWhereInput{
@@ -308,6 +284,36 @@ func (c *controllerServer) publishVolumesToVm(nodeName string) error {
 
 	if len(getVMRes.Payload) < 1 {
 		return fmt.Errorf("unable to get VM: %v", nodeName)
+	}
+
+	vmMountDiskMap := make(map[string]bool)
+
+	for _, vmDisk := range getVMRes.Payload[0].VMDisks {
+		vmMountDiskMap[*vmDisk.ID] = true
+	}
+
+	waitAttachVolumes := []string{}
+	skipReason := ""
+
+	for _, volume := range getRes.Payload {
+		if len(volume.VMDisks) == 0 {
+			waitAttachVolumes = append(waitAttachVolumes, *volume.ID)
+			continue
+		}
+
+		if _, ok := vmMountDiskMap[*volume.VMDisks[0].ID]; !ok {
+			skipReason = fmt.Sprintf("%s \n volume %s is already in other vm", skipReason, *volume.ID)
+			continue
+		}
+
+		skipReason = fmt.Sprintf("%s \n volume %s already published, corresponding vm disk: %v", skipReason, *volume.ID, volume.VMDisks)
+	}
+
+	klog.Infof("Skip volumes for reason %s", skipReason)
+
+	if len(waitAttachVolumes) == 0 {
+		klog.Infof("all volumes %v is mounting or published on node %v", attachVolumes, nodeName)
+		return nil
 	}
 
 	updateParams := vm.NewAddVMDiskParams()
