@@ -22,6 +22,7 @@ import (
 	"k8s.io/klog"
 	"k8s.io/utils/pointer"
 
+	iscsilun "github.com/smartxworks/cloudtower-go-sdk/v2/client/iscsi_lun"
 	vmdisk "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_disk"
 	vmvolume "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_volume"
 
@@ -478,7 +479,7 @@ func (n *nodeServer) NodeExpandVolume(
 	}, nil
 }
 
-func (n *nodeServer) getVolumeDevice(volumeID string) (*string, error) {
+func (n *nodeServer) getVMVolumeSerial(volumeID string) (*string, error) {
 	getVmDiskParams := vmdisk.NewGetVMDisksParams()
 	getVmDiskParams.RequestBody = &models.GetVMDisksRequestBody{
 		Where: &models.VMDiskWhereInput{
@@ -500,11 +501,62 @@ func (n *nodeServer) getVolumeDevice(volumeID string) (*string, error) {
 		return nil, fmt.Errorf("unable to get VM disk in VM %v with volume %v", n.config.NodeID, volumeID)
 	}
 
-	device := ""
-
 	serial := getVmDiskRes.Payload[0].Serial
 	if serial == nil || *serial == "" {
 		return nil, fmt.Errorf("unable to get serial from Elf API in VM %v with volume %v", n.config.NodeID, volumeID)
+	}
+
+	return serial, nil
+}
+
+func (n *nodeServer) getVMVolumeZBSVolumeID(volumeID string) (*string, error) {
+	getParams := vmvolume.NewGetVMVolumesParams()
+	getParams.RequestBody = &models.GetVMVolumesRequestBody{
+		Where: &models.VMVolumeWhereInput{
+			ID: pointer.String(volumeID),
+		},
+	}
+
+	getRes, err := n.config.TowerClient.VMVolume.GetVMVolumes(getParams)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(getRes.Payload) == 0 {
+		return nil, fmt.Errorf("failed to get volume %v", volumeID)
+	}
+
+	volume := getRes.Payload[0]
+	getISCSILunParams := iscsilun.NewGetIscsiLunsParams()
+	getISCSILunParams.RequestBody = &models.GetIscsiLunsRequestBody{
+		Where: &models.IscsiLunWhereInput{
+			ID: volume.Lun.ID,
+		},
+	}
+
+	getIscsiLunResp, err := n.config.TowerClient.IscsiLun.GetIscsiLuns(getISCSILunParams)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(getIscsiLunResp.Payload) == 0 {
+		return nil, fmt.Errorf("failed to get iscsi lun relate volume %v with iscsi lun %v ", volumeID, volume.Lun.ID)
+	}
+
+	return getIscsiLunResp.Payload[0].ZbsVolumeID, nil
+}
+
+func (n *nodeServer) getVolumeDevice(volumeID string) (*string, error) {
+	device := ""
+
+	serial, err := n.getVMVolumeSerial(volumeID)
+	if err != nil {
+		return nil, err
+	}
+
+	zbsVolumeID, err := n.getVMVolumeZBSVolumeID(volumeID)
+	if err != nil {
+		return nil, err
 	}
 
 	lsblkCmd := `lsblk -o "NAME" -e 1,7,11 -d -n`
@@ -523,13 +575,16 @@ func (n *nodeServer) getVolumeDevice(volumeID string) (*string, error) {
 		}
 
 		idSerial := strings.Split(strings.TrimSpace(string(idSerialLine)), "=")
-		klog.Infof("ID_SERIAL parsed from udevadm is %v, comparing to %v", idSerial, *serial)
+		klog.Infof("ID_SERIAL parsed from udevadm is %v, comparing to serial %v zbsVolumeID %v", idSerial, *serial, *zbsVolumeID)
 
 		if len(idSerial) != 2 {
 			continue
 		}
 
-		if strings.HasPrefix(*serial, idSerial[1]) {
+		// In ELF cluster vhost mode, ID_SERIAL may be the ZBSVolumeID corresponding to the volume,
+		// as long as there is a match between serial and ZBSVolumeID,
+		// the device corresponding to the mounted volume can be confirmed.
+		if strings.HasPrefix(*serial, idSerial[1]) || strings.HasPrefix(*zbsVolumeID, idSerial[1]) {
 			device = fmt.Sprintf("/dev/%v", d)
 		}
 	}
