@@ -37,9 +37,9 @@ const (
 
 	defaultVolumeSize = 1 * GB
 
-	defaultClusterLabelKey = "k8s-cluster-id"
+	defaultClusterLabelKey = "elf-csi.k8s-cluster-id"
 
-	defaultSystemClusterLabelKey = "system.cloudtower/k8s-cluster-id"
+	defaultSystemClusterLabelKey = "system.cloudtower/elf-csi.k8s-cluster-id"
 )
 
 var ErrVMVolumeNotFound = errors.New("volume is not found")
