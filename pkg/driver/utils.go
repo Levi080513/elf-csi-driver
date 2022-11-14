@@ -14,9 +14,20 @@ import (
 	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+type volumeFilesystemStats struct {
+	availableBytes int64
+	totalBytes     int64
+	usedBytes      int64
+
+	availableInodes int64
+	totalInodes     int64
+	usedInodes      int64
+}
 
 func roundUp(num uint64, base uint64) uint64 {
 	div := num / base
@@ -246,4 +257,41 @@ func checkNeedSharing(caps []*csi.VolumeCapability) (bool, error) {
 	}
 
 	return needSharing, nil
+}
+
+func getVolumeFilesystemStats(volumePath string) (*volumeFilesystemStats, error) {
+	var statfs unix.Statfs_t
+	// See http://man7.org/linux/man-pages/man2/statfs.2.html for details.
+	err := unix.Statfs(volumePath, &statfs)
+	if err != nil {
+		return nil, err
+	}
+
+	stats := &volumeFilesystemStats{
+		availableBytes: int64(statfs.Bavail) * statfs.Bsize,
+		totalBytes:     int64(statfs.Blocks) * statfs.Bsize,
+		usedBytes:      (int64(statfs.Blocks) - int64(statfs.Bfree)) * statfs.Bsize,
+
+		availableInodes: int64(statfs.Ffree),
+		totalInodes:     int64(statfs.Files),
+		usedInodes:      int64(statfs.Files) - int64(statfs.Ffree),
+	}
+
+	return stats, nil
+}
+
+func isBlockDevice(volumePath string) (bool, error) {
+	var stat unix.Stat_t
+	// See https://man7.org/linux/man-pages/man2/stat.2.html for details
+	err := unix.Stat(volumePath, &stat)
+	if err != nil {
+		return false, err
+	}
+
+	// See https://man7.org/linux/man-pages/man7/inode.7.html for detail
+	if (stat.Mode & unix.S_IFMT) == unix.S_IFBLK {
+		return true, nil
+	}
+
+	return false, nil
 }

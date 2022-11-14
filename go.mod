@@ -19,6 +19,7 @@ require (
 	github.com/smartxworks/cloudtower-go-sdk/v2 v2.1.0
 	github.com/stretchr/testify v1.7.0
 	go.uber.org/zap v1.19.0 // indirect
+	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/grpc v1.41.0

@@ -5,6 +5,7 @@ package driver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,18 +14,19 @@ import (
 	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	kmount "k8s.io/utils/mount"
 
 	"github.com/openlyinc/pointy"
-	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
 	"k8s.io/klog"
+	kmount "k8s.io/utils/mount"
 	"k8s.io/utils/pointer"
 
 	iscsilun "github.com/smartxworks/cloudtower-go-sdk/v2/client/iscsi_lun"
 	vmdisk "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_disk"
 	vmvolume "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_volume"
+	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
 
 	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 )
@@ -392,7 +394,89 @@ func (n *nodeServer) NodeUnpublishVolume(
 func (n *nodeServer) NodeGetVolumeStats(
 	ctx context.Context,
 	req *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
-	return nil, nil
+	volumeID := req.GetVolumeId()
+	if volumeID == "" {
+		return nil, status.Error(codes.InvalidArgument, "the volume id parameter is required")
+	}
+
+	volumePath := req.GetVolumePath()
+	if volumePath == "" {
+		return nil, status.Error(codes.InvalidArgument, "the volume path parameter is required")
+	}
+
+	isBlockVolume, err := isBlockDevice(volumePath)
+	if err != nil {
+		// ENOENT means the volumePath does not exist
+		// See https://man7.org/linux/man-pages/man2/stat.2.html for details.
+		if errors.Is(err, unix.ENOENT) {
+			return nil, status.Errorf(codes.NotFound, "the volume %v is not mounted on the path %v", volumeID, volumePath)
+		}
+
+		return nil, status.Errorf(codes.Internal, "failed to check volume mode for volume path %v: %v", volumePath, err)
+	}
+
+	if isBlockVolume {
+		getVMVolumeParams := vmvolume.NewGetVMVolumesParams()
+		getVMVolumeParams.RequestBody = &models.GetVMVolumesRequestBody{
+			Where: &models.VMVolumeWhereInput{
+				ID: pointer.String(volumeID),
+			},
+		}
+
+		vmVolume, getVMVolumeErr := n.config.TowerClient.VMVolume.GetVMVolumes(getVMVolumeParams)
+		if getVMVolumeErr != nil {
+			return nil, status.Error(codes.Internal, fmt.Sprintf("failed to get VM Volume %v, %v", volumeID, getVMVolumeErr))
+		}
+
+		if len(vmVolume.Payload) == 0 {
+			return nil, status.Error(codes.Internal, fmt.Sprintf("cannot find the VM Volume by id %v", volumeID))
+		}
+
+		volumeByteUsage := &csi.VolumeUsage{
+			Total:     *vmVolume.Payload[0].Size,
+			Used:      *vmVolume.Payload[0].UniqueSize,
+			Available: *vmVolume.Payload[0].Size - *vmVolume.Payload[0].UniqueSize,
+			Unit:      csi.VolumeUsage_BYTES,
+		}
+
+		return &csi.NodeGetVolumeStatsResponse{
+			Usage: []*csi.VolumeUsage{
+				volumeByteUsage,
+			},
+		}, nil
+	}
+
+	stats, err := getVolumeFilesystemStats(volumePath)
+	if err != nil {
+		// ENOENT means the volumePath does not exist
+		// See http://man7.org/linux/man-pages/man2/statfs.2.html for details.
+		if errors.Is(err, unix.ENOENT) {
+			return nil, status.Errorf(codes.NotFound, "the volume %v is not mounted on the path %v", volumeID, volumePath)
+		}
+
+		return nil, status.Errorf(codes.Internal, "failed to retrieve capacity statistics for volume path %v: %v", volumePath, err)
+	}
+
+	volumeByteUsage := &csi.VolumeUsage{
+		Available: stats.availableBytes,
+		Total:     stats.totalBytes,
+		Used:      stats.usedBytes,
+		Unit:      csi.VolumeUsage_BYTES,
+	}
+
+	volumeInodeUsage := &csi.VolumeUsage{
+		Available: stats.availableInodes,
+		Total:     stats.totalInodes,
+		Used:      stats.usedInodes,
+		Unit:      csi.VolumeUsage_INODES,
+	}
+
+	return &csi.NodeGetVolumeStatsResponse{
+		Usage: []*csi.VolumeUsage{
+			volumeByteUsage,
+			volumeInodeUsage,
+		},
+	}, nil
 }
 
 func (n *nodeServer) NodeGetCapabilities(
