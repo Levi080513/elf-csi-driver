@@ -5,7 +5,7 @@ go 1.14
 require (
 	github.com/container-storage-interface/spec v1.3.0
 	github.com/evanphx/json-patch v4.11.0+incompatible // indirect
-	github.com/go-openapi/runtime v0.24.1
+	github.com/go-openapi/runtime v0.24.2
 	github.com/golang/protobuf v1.5.2
 	github.com/googleapis/gnostic v0.5.5 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
@@ -13,17 +13,16 @@ require (
 	github.com/kubernetes-csi/csi-test/v3 v3.1.1
 	github.com/kubernetes-csi/external-snapshotter/client/v4 v4.1.0
 	github.com/onsi/ginkgo v1.16.4
-	github.com/onsi/gomega v1.19.0
-	github.com/openlyinc/pointy v1.1.2
+	github.com/onsi/gomega v1.24.1
+	github.com/openlyinc/pointy v1.2.0
 	github.com/prometheus/client_golang v1.11.0 // indirect
-	github.com/smartxworks/cloudtower-go-sdk/v2 v2.1.0
-	github.com/stretchr/testify v1.7.0
+	github.com/smartxworks/cloudtower-go-sdk/v2 v2.3.1-0.20221116054903-75c72d44c7a4
+	github.com/stretchr/testify v1.8.0
 	go.uber.org/zap v1.19.0 // indirect
-	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a
+	golang.org/x/sys v0.2.0
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/grpc v1.41.0
-	google.golang.org/protobuf v1.26.1-0.20210525005349-febffdd88e85 // indirect
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.21.4
 	k8s.io/apimachinery v0.21.4

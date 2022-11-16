@@ -581,6 +581,8 @@ func (n *nodeServer) getVMVolumeSerial(volumeID string) (*string, error) {
 		return nil, err
 	}
 
+	klog.Infof("GetVMDisk TraceID %s", getVmDiskRes.XTowerRequestID)
+
 	if len(getVmDiskRes.Payload) < 1 {
 		return nil, fmt.Errorf("unable to get VM disk in VM %v with volume %v", n.config.NodeID, volumeID)
 	}

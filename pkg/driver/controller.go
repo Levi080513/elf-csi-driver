@@ -163,6 +163,7 @@ func (c *controllerServer) createVmVolume(clusterIdOrLocalId string, name string
 		return nil, err
 	}
 
+	klog.Infof("CreateVMVolume TraceID %s", createRes.XTowerRequestID)
 	withTaskVMVolume := createRes.Payload[0]
 	if err = c.waitTask(withTaskVMVolume.TaskID); err != nil {
 		return nil, err
@@ -344,7 +345,7 @@ func (c *controllerServer) publishVolumesToVm(nodeName string) error {
 	if err != nil {
 		return err
 	}
-
+	klog.Infof("AddVMDisk TraceID %s", updateRes.XTowerRequestID)
 	return c.waitTask(updateRes.Payload[0].TaskID)
 }
 
@@ -412,7 +413,7 @@ func (c *controllerServer) DeleteVolume(
 		return nil, status.Error(codes.Internal,
 			fmt.Sprintf("failed to delete volume %v, %v", volumeID, err))
 	}
-
+	klog.Infof("DeleteVolume TraceID %s", deleteRes.XTowerRequestID)
 	err = c.waitTask(deleteRes.Payload[0].TaskID)
 	if err != nil {
 		return nil, status.Error(codes.Internal,
@@ -519,6 +520,8 @@ func (c *controllerServer) unpublishVolumesFromVm(nodeName string) error {
 	if err != nil {
 		return err
 	}
+
+	klog.Infof("RemoveVMDisk TraceID %s", updateRes.XTowerRequestID)
 
 	return c.waitTask(updateRes.Payload[0].TaskID)
 }
