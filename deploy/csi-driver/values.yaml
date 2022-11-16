@@ -106,6 +106,10 @@ driver:
 sidecar:
   registry: "registry.smtx.io/kubesmart/iomesh"
 
+  config:
+    csi_attacher:
+      retryIntervalMax: 30s
+
   resources:
     driver_registrar:
       limits:

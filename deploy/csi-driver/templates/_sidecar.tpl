@@ -119,6 +119,7 @@ csi-attacher sidecar.
   resources: {{ toYaml .Values.sidecar.resources.csi_attacher | nindent 4 }}
   args:
     - "--csi-address=$(ADDRESS)"
+    - "--retry-interval-max={{ .Values.sidecar.config.csi_attacher.retryIntervalMax}}"
     - "--leader-election"
     - "--v=5"
 {{ include "csi-driver.sidecar.container-common" . | indent 2 }}

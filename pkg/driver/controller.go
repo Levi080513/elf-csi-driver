@@ -204,6 +204,18 @@ func (c *controllerServer) ControllerPublishVolume(
 		return nil, err
 	}
 
+	ok, err := c.isVolumePublishedToVM(volumeID, nodeName)
+	if err != nil {
+		return nil, err
+	}
+
+	// The volume is already published to VM,
+	// skip publish and marking ControllerPublishVolume as successful.
+	if ok {
+		klog.Infof("VM Volume %s is already published in VM %s, skip publish", volumeID, nodeName)
+		return &csi.ControllerPublishVolumeResponse{}, nil
+	}
+
 	c.addAttachVolume(volumeID, nodeName)
 
 	lock := c.keyMutex.TryLockKey(nodeName)
@@ -220,6 +232,31 @@ func (c *controllerServer) ControllerPublishVolume(
 	}
 
 	return &csi.ControllerPublishVolumeResponse{}, nil
+}
+
+func (c *controllerServer) isVolumePublishedToVM(volumeID, nodeName string) (bool, error) {
+	getVMDiskParams := vmdisk.NewGetVMDisksParams()
+	getVMDiskParams.RequestBody = &models.GetVMDisksRequestBody{
+		Where: &models.VMDiskWhereInput{
+			VM: &models.VMWhereInput{
+				Name: pointy.String(nodeName),
+			},
+			VMVolume: &models.VMVolumeWhereInput{
+				ID: pointy.String(volumeID),
+			},
+		},
+	}
+
+	getVMDiskRes, err := c.config.TowerClient.VMDisk.GetVMDisks(getVMDiskParams)
+	if err != nil {
+		return true, err
+	}
+
+	if len(getVMDiskRes.Payload) == 0 {
+		return false, nil
+	}
+
+	return true, nil
 }
 
 func (c *controllerServer) canPublishToNode(nodeAddr string) error {
@@ -446,6 +483,18 @@ func (c *controllerServer) ControllerUnpublishVolume(
 	nodeName := req.GetNodeId()
 	if nodeName == "" {
 		return nil, status.Error(codes.InvalidArgument, "nodeId is empty")
+	}
+
+	ok, err := c.isVolumePublishedToVM(volumeID, nodeName)
+	if err != nil {
+		return nil, err
+	}
+
+	// The volume is already unpublished from VM,
+	// skip unpublish and marking ControllerUnpublishVolume as successful.
+	if !ok {
+		klog.Infof("VM Volume %s is already unpublished in VM %s, skip unpublish", volumeID, nodeName)
+		return &csi.ControllerUnpublishVolumeResponse{}, nil
 	}
 
 	c.addDetachVolume(volumeID, nodeName)
