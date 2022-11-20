@@ -295,3 +295,13 @@ func isBlockDevice(volumePath string) (bool, error) {
 
 	return false, nil
 }
+
+func isVolumeInAttachVolumes(volumeID string, attachVolumes []string) bool {
+	for i := 0; i < len(attachVolumes); i++ {
+		if volumeID == attachVolumes[i] {
+			return true
+		}
+	}
+
+	return false
+}
