@@ -40,6 +40,10 @@ const (
 	defaultClusterLabelKey = "elf-csi.k8s-cluster-id"
 
 	defaultSystemClusterLabelKey = "system.cloudtower/elf-csi.k8s-cluster-id"
+
+	// If Volume has label 'system.cloudtower/keep-after-delete-vm=true',
+	// Tower will keep volume after VM which volume mounted has deleted.
+	defaultKeepAfterVMDeleteLabelKey = "system.cloudtower/keep-after-delete-vm"
 )
 
 var ErrVMVolumeNotFound = errors.New("volume is not found")
@@ -757,6 +761,11 @@ func (c *controllerServer) reconcileVolumeLabel(vmVolume models.VMVolume) error 
 		return status.Error(codes.Internal, fmt.Sprintf("upsert volume label %s for cluster %s failed", defaultSystemClusterLabelKey, c.config.ClusterID))
 	}
 
+	keepAfterVMDeleteLabel, err := c.upsertLabel(defaultKeepAfterVMDeleteLabelKey, "true")
+	if err != nil {
+		return status.Error(codes.Internal, fmt.Sprintf("upsert volume label %s failed", defaultKeepAfterVMDeleteLabelKey))
+	}
+
 	addLabelIDs := []string{}
 
 	vmLabelMap := make(map[string]bool)
@@ -770,6 +779,10 @@ func (c *controllerServer) reconcileVolumeLabel(vmVolume models.VMVolume) error 
 
 	if _, ok := vmLabelMap[*systemClusterIDLabel.ID]; !ok {
 		addLabelIDs = append(addLabelIDs, *systemClusterIDLabel.ID)
+	}
+
+	if _, ok := vmLabelMap[*keepAfterVMDeleteLabel.ID]; !ok {
+		addLabelIDs = append(addLabelIDs, *keepAfterVMDeleteLabel.ID)
 	}
 
 	if len(addLabelIDs) == 0 {
