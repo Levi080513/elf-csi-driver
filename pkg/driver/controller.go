@@ -224,15 +224,21 @@ func (c *controllerServer) ControllerPublishVolume(
 
 	lock := c.keyMutex.TryLockKey(nodeName)
 	if !lock {
-		return nil, fmt.Errorf("VM is updating now, record publish request and return ")
+		return nil, status.Error(codes.Internal, "VM is updating now, record publish request and return")
 	}
 
 	defer func() {
 		_ = c.keyMutex.UnlockKey(nodeName)
 	}()
 
-	if err := c.publishVolumesToVm(nodeName); err != nil {
+	publishedVolumes, err := c.publishVolumesToVm(nodeName)
+	if err != nil {
 		return nil, err
+	}
+
+	// Mark ControllerPublishVolume as failed when current volume not in publishedVolumes .
+	if !isVolumeInAttachVolumes(volumeID, publishedVolumes) {
+		return nil, status.Errorf(codes.Internal, "failed to publish volume %s to VM %s, VM Disk is not found", volumeID, nodeName)
 	}
 
 	return &csi.ControllerPublishVolumeResponse{}, nil
@@ -290,29 +296,14 @@ func (c *controllerServer) canPublishToNode(nodeAddr string) error {
 	return nil
 }
 
-func (c *controllerServer) publishVolumesToVm(nodeName string) error {
-	attachVolumes := c.GetAttachVolumesAndReset(nodeName)
-
-	if len(attachVolumes) == 0 {
-		return nil
-	}
-
-	getParams := vmvolume.NewGetVMVolumesParams()
-	getParams.RequestBody = &models.GetVMVolumesRequestBody{
-		Where: &models.VMVolumeWhereInput{
-			IDIn: attachVolumes,
-		},
-	}
-
-	getRes, err := c.config.TowerClient.VMVolume.GetVMVolumes(getParams)
-	if err != nil {
-		return err
-	}
-
-	if len(getRes.Payload) < 1 {
-		return fmt.Errorf("unable to get volume: %v", attachVolumes)
-	}
-
+// publishVolumesToVm is the batch func to attach disk to VM,
+// return volumes which attached success in this publish.
+// Best effort to publish volumes to VM,
+// Skipping volume which is in following case:
+//  1. Volume is not found in Tower.
+//  2. Volume has mounted on this VM.
+//  3. Volume has mounted on other VM.
+func (c *controllerServer) publishVolumesToVm(nodeName string) ([]string, error) {
 	getVmParams := vm.NewGetVmsParams()
 	getVmParams.RequestBody = &models.GetVmsRequestBody{
 		Where: &models.VMWhereInput{
@@ -322,41 +313,26 @@ func (c *controllerServer) publishVolumesToVm(nodeName string) error {
 
 	getVMRes, err := c.config.TowerClient.VM.GetVms(getVmParams)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
+	// Return failed when the VM which volume will publish to is not found in Tower.
 	if len(getVMRes.Payload) < 1 {
-		return fmt.Errorf("unable to get VM: %v", nodeName)
+		return nil, fmt.Errorf("unable to get VM: %v", nodeName)
 	}
 
-	vmMountDiskMap := make(map[string]bool)
+	// get volumes which need to publish to this VM.
+	attachVolumes := c.GetAttachVolumesAndReset(nodeName)
 
-	for _, vmDisk := range getVMRes.Payload[0].VMDisks {
-		vmMountDiskMap[*vmDisk.ID] = true
+	needAttachVolumes, err := c.filterNeedAttachVolumes(attachVolumes, getVMRes.Payload[0])
+	if err != nil {
+		klog.Errorf("failed to filter volumes %v which need attach to VM %s. error %s", attachVolumes, nodeName, err.Error())
+		return nil, err
 	}
 
-	waitAttachVolumes := []string{}
-	skipReason := ""
-
-	for _, volume := range getRes.Payload {
-		if len(volume.VMDisks) == 0 {
-			waitAttachVolumes = append(waitAttachVolumes, *volume.ID)
-			continue
-		}
-
-		if _, ok := vmMountDiskMap[*volume.VMDisks[0].ID]; !ok {
-			skipReason = fmt.Sprintf("%s \n volume %s is already in other vm", skipReason, *volume.ID)
-			continue
-		}
-
-		skipReason = fmt.Sprintf("%s \n volume %s already published, corresponding vm disk: %v", skipReason, *volume.ID, volume.VMDisks)
-	}
-
-	klog.Infof("Skip volumes for reason %s", skipReason)
-
-	if len(waitAttachVolumes) == 0 {
-		klog.Infof("all volumes %v is mounting or published on node %v", attachVolumes, nodeName)
-		return nil
+	if len(needAttachVolumes) == 0 {
+		klog.Infof("Skip all volumes %v which need attach to VM %v", attachVolumes, nodeName)
+		return nil, nil
 	}
 
 	updateParams := vm.NewAddVMDiskParams()
@@ -371,10 +347,10 @@ func (c *controllerServer) publishVolumesToVm(nodeName string) error {
 		},
 	}
 
-	for index, waitAttachVolume := range waitAttachVolumes {
+	for index, needAttachVolume := range needAttachVolumes {
 		mountParam := &models.MountDisksParams{
 			Index:      pointy.Int32(int32(index)),
-			VMVolumeID: pointy.String(waitAttachVolume),
+			VMVolumeID: pointy.String(needAttachVolume),
 			Boot:       pointy.Int32(int32(len(getVMRes.Payload[0].VMDisks) + 1 + index)),
 			Bus:        models.BusVIRTIO.Pointer(),
 		}
@@ -383,10 +359,10 @@ func (c *controllerServer) publishVolumesToVm(nodeName string) error {
 
 	updateRes, err := c.config.TowerClient.VM.AddVMDisk(updateParams)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return c.waitTask(updateRes.Payload[0].TaskID)
+	return needAttachVolumes, c.waitTask(updateRes.Payload[0].TaskID)
 }
 
 func (c *controllerServer) ControllerGetCapabilities(
@@ -505,7 +481,7 @@ func (c *controllerServer) ControllerUnpublishVolume(
 
 	lock := c.keyMutex.TryLockKey(nodeName)
 	if !lock {
-		return nil, status.Error(codes.Internal, "VM is updating now, record unpublish request and return ")
+		return nil, status.Error(codes.Internal, "VM is updating now, record unpublish request and return")
 	}
 
 	defer func() {
@@ -519,6 +495,7 @@ func (c *controllerServer) ControllerUnpublishVolume(
 	return &csi.ControllerUnpublishVolumeResponse{}, nil
 }
 
+// unpublishVolumesFromVm is the batch func to detach disk from VM.
 func (c *controllerServer) unpublishVolumesFromVm(nodeName string) error {
 	detachVolumes := c.GetDetachVolumesAndReset(nodeName)
 
@@ -916,4 +893,85 @@ func (c *controllerServer) addDetachVolume(volumeID, nodeName string) {
 	}
 
 	c.volumeDetachList[nodeName] = append(c.volumeDetachList[nodeName], volumeID)
+}
+
+// filterNeedAttachVolumes is a func to filter attach volumes in following case:
+//  1. Volume is not found in Tower.
+//  2. Volume has mounted on this VM.
+//  3. Volume has mounted on other VM.
+func (c *controllerServer) filterNeedAttachVolumes(attachVolumes []string, vm *models.VM) ([]string, error) {
+	// Return early when attachVolumes length is 0.
+	if len(attachVolumes) == 0 {
+		return nil, nil
+	}
+
+	getVMVolumeParams := vmvolume.NewGetVMVolumesParams()
+	getVMVolumeParams.RequestBody = &models.GetVMVolumesRequestBody{
+		Where: &models.VMVolumeWhereInput{
+			IDIn: attachVolumes,
+		},
+	}
+
+	// GetVMVolumes will filter volume which need attach to VM is not found in Tower.
+	getVMVolumeRes, err := c.config.TowerClient.VMVolume.GetVMVolumes(getVMVolumeParams)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return early when all volumes which need attach to VM are not found in Tower.
+	if len(getVMVolumeRes.Payload) == 0 {
+		klog.Infof("All volumes %v which need attach to VM %s is not found in Tower", attachVolumes, vm.Name)
+		return nil, nil
+	}
+
+	skipReasons := []string{}
+	vmVolumeInTowerIDMap := make(map[string]bool)
+
+	for _, vmVolume := range getVMVolumeRes.Payload {
+		vmVolumeInTowerIDMap[*vmVolume.ID] = true
+	}
+
+	// record skip reason for volume is not found in Tower.
+	for _, attachVolume := range attachVolumes {
+		if _, ok := vmVolumeInTowerIDMap[attachVolume]; ok {
+			continue
+		}
+
+		skipReasons = append(skipReasons, fmt.Sprintf("volume %s is not found in Tower", attachVolume))
+	}
+
+	// vmDiskIDMap is map for VMDisk ID in this VM.
+	vmDiskIDMap := make(map[string]bool)
+
+	for _, vmDisk := range vm.VMDisks {
+		vmDiskIDMap[*vmDisk.ID] = true
+	}
+
+	needAttachVolumes := []string{}
+
+	for _, volume := range getVMVolumeRes.Payload {
+		// Volume VMDisks length is 0 means the volume has not mounted,
+		// should append to attach volumes.
+		if len(volume.VMDisks) == 0 {
+			needAttachVolumes = append(needAttachVolumes, *volume.ID)
+			continue
+		}
+
+		// If volume VMDisk ID is not in vmDiskIDMap,
+		// means the volume has mounted on other VM.
+		// skipping attach to this VM.
+		if _, ok := vmDiskIDMap[*volume.VMDisks[0].ID]; !ok {
+			skipReasons = append(skipReasons, fmt.Sprintf("volume %s is already mounted in other vm", *volume.ID))
+			continue
+		}
+
+		// If volume VMDisk ID is in vmDiskIDMap,
+		// means the volume has mounted on this VM.
+		// skipping attach to this VM.
+		skipReasons = append(skipReasons, fmt.Sprintf("volume %s already attached, corresponding vm disk: %v", *volume.ID, volume.VMDisks))
+	}
+
+	klog.Infof("Skip volumes for reason %s", strings.Join(skipReasons, ","))
+
+	return needAttachVolumes, nil
 }
