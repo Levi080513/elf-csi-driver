@@ -10,10 +10,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-
-	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
+	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -301,6 +301,17 @@ func isVolumeInAttachVolumes(volumeID string, attachVolumes []string) bool {
 		if volumeID == attachVolumes[i] {
 			return true
 		}
+	}
+
+	return false
+}
+
+// If volume LocalID has 'placeholder-' prefix,
+// means volume is in creating.
+// see http://gitlab.smartx.com/frontend/tower/-/merge_requests/8155
+func isVolumeInCreating(vmVolume *models.VMVolume) bool {
+	if strings.HasPrefix(*vmVolume.LocalID, "placeholder-") {
+		return true
 	}
 
 	return false

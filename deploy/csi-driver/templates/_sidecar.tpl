@@ -83,6 +83,7 @@ let the sidecar use the default election method (configmap or endpoint)
   resources: {{ toYaml .Values.sidecar.resources.csi_provisioner | nindent 4 }}
   args:
     - "--csi-address=$(ADDRESS)"
+    - "--retry-interval-max={{ .Values.sidecar.config.csi_provisioner.retryIntervalMax}}"
     {{- /* 
     automatically sets pv/pvc name in the CSI CreateVolumeRequest, 
     https://kubernetes-csi.github.io/docs/external-provisioner.html 

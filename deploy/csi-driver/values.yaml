@@ -109,6 +109,8 @@ sidecar:
   config:
     csi_attacher:
       retryIntervalMax: 30s
+    csi_provisioner:
+      retryIntervalMax: 30s
 
   resources:
     driver_registrar:

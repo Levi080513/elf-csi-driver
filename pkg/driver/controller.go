@@ -126,6 +126,11 @@ func (c *controllerServer) createVmVolume(clusterIdOrLocalId string, name string
 	}
 
 	if len(getRes.Payload) > 0 {
+		// If volume is in creating, return error and wait for next requeue.
+		if isVolumeInCreating(getRes.Payload[0]) {
+			return nil, fmt.Errorf("volume %s is creating now. wait for next requeue", name)
+		}
+
 		return getRes.Payload[0], nil
 	}
 
