@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	towerclient "github.com/smartxworks/cloudtower-go-sdk/v2/client"
 	"net"
 	"net/rpc"
 	"strings"
@@ -324,6 +325,7 @@ func (c *controllerServer) canPublishToNode(nodeAddr string) error {
 //  2. Volume has mounted on this VM.
 //  3. Volume has mounted on other VM.
 func (c *controllerServer) publishVolumesToVm(nodeName string) ([]string, error) {
+	PrintVmDisk(c.config.TowerClient, nodeName)
 	getVmParams := vm.NewGetVmsParams()
 	getVmParams.RequestBody = &models.GetVmsRequestBody{
 		Where: &models.VMWhereInput{
@@ -517,6 +519,7 @@ func (c *controllerServer) ControllerUnpublishVolume(
 
 // unpublishVolumesFromVm is the batch func to detach disk from VM.
 func (c *controllerServer) unpublishVolumesFromVm(nodeName string) error {
+	PrintVmDisk(c.config.TowerClient, nodeName)
 	detachVolumes := c.GetDetachVolumesAndReset(nodeName)
 
 	if len(detachVolumes) == 0 {
@@ -994,4 +997,35 @@ func (c *controllerServer) filterNeedAttachVolumes(attachVolumes []string, vm *m
 	klog.Infof("Skip volumes for reason %s", strings.Join(skipReasons, ","))
 
 	return needAttachVolumes, nil
+}
+
+func PrintVmDisk(client *towerclient.Cloudtower, nodeName string) {
+	getVmDiskParams := vmdisk.NewGetVMDisksParams()
+	getVmDiskParams.RequestBody = &models.GetVMDisksRequestBody{
+		Where: &models.VMDiskWhereInput{
+			VM: &models.VMWhereInput{
+				Name: pointy.String(nodeName),
+			},
+		},
+	}
+
+	getVmDiskRes, err := client.VMDisk.GetVMDisks(getVmDiskParams)
+	if err != nil {
+		klog.Errorf("get VM Disk for node %s failed. error %s", nodeName, err.Error())
+		return
+	}
+
+	klog.Infof("current VM %s has VM Disk %d", nodeName, len(getVmDiskRes.Payload))
+	for _, disk := range getVmDiskRes.Payload {
+		if disk.VM == nil || disk.VMVolume == nil {
+			continue
+		}
+		if disk.VM.ID != nil && disk.VMVolume.ID != nil {
+			klog.Infof("VMDisk ID: %s, VM ID %s,   Volume ID %s", *disk.ID, *disk.VM.ID, *disk.VMVolume.ID)
+		}
+		if disk.VM.Name != nil && disk.VMVolume.Name != nil {
+			klog.Infof("VMDisk ID: %s, VM Name %s,  Volume Name %s", *disk.ID, *disk.VM.Name, *disk.VMVolume.Name)
+		}
+	}
+
 }

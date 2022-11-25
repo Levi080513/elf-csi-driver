@@ -564,6 +564,7 @@ func (n *nodeServer) NodeExpandVolume(
 }
 
 func (n *nodeServer) getVMVolumeSerial(volumeID string) (*string, error) {
+	PrintVmDisk(n.config.TowerClient, n.config.NodeID)
 	getVmDiskParams := vmdisk.NewGetVMDisksParams()
 	getVmDiskParams.RequestBody = &models.GetVMDisksRequestBody{
 		Where: &models.VMDiskWhereInput{
