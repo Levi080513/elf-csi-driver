@@ -46,6 +46,7 @@ const (
 var mountModeAccessModes = map[csi.VolumeCapability_AccessMode_Mode]bool{
 	csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY: true,
 	csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER:      true,
+	csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY:  true,
 }
 
 var blockModeAccessModes = map[csi.VolumeCapability_AccessMode_Mode]bool{
