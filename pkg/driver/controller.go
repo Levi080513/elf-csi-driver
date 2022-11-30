@@ -102,7 +102,7 @@ func (c *controllerServer) CreateVolume(
 
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
-			VolumeId:      *vmVolume.ID,
+			VolumeId:      *vmVolume.LocalID,
 			CapacityBytes: *vmVolume.Size,
 			ContentSource: req.GetVolumeContentSource(),
 			// Store StorageClass config in PV spec.csi.volumeAttributes transfer to other RPC call
