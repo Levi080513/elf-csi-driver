@@ -419,7 +419,7 @@ func (n *nodeServer) NodeGetVolumeStats(
 		getVMVolumeParams := vmvolume.NewGetVMVolumesParams()
 		getVMVolumeParams.RequestBody = &models.GetVMVolumesRequestBody{
 			Where: &models.VMVolumeWhereInput{
-				ID: pointer.String(volumeID),
+				LocalID: pointer.String(volumeID),
 			},
 		}
 
@@ -571,7 +571,7 @@ func (n *nodeServer) getVMVolumeSerial(volumeID string) (*string, error) {
 				Name: pointy.String(n.config.NodeID),
 			},
 			VMVolume: &models.VMVolumeWhereInput{
-				ID: pointer.String(volumeID),
+				LocalID: pointer.String(volumeID),
 			},
 		},
 	}
@@ -597,7 +597,7 @@ func (n *nodeServer) getVMVolumeZBSVolumeID(volumeID string) (*string, error) {
 	getParams := vmvolume.NewGetVMVolumesParams()
 	getParams.RequestBody = &models.GetVMVolumesRequestBody{
 		Where: &models.VMVolumeWhereInput{
-			ID: pointer.String(volumeID),
+			LocalID: pointer.String(volumeID),
 		},
 	}
 
@@ -684,7 +684,7 @@ func (n *nodeServer) getVolume(volumeID string) (*models.VMVolume, error) {
 	getVolumeParams := vmvolume.NewGetVMVolumesParams()
 	getVolumeParams.RequestBody = &models.GetVMVolumesRequestBody{
 		Where: &models.VMVolumeWhereInput{
-			ID: pointer.String(volumeID),
+			LocalID: pointer.String(volumeID),
 		},
 	}
 

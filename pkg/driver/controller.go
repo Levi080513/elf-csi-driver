@@ -177,7 +177,22 @@ func (c *controllerServer) createVmVolume(clusterIdOrLocalId string, name string
 		return nil, err
 	}
 
-	return withTaskVMVolume.Data, err
+	getRes, err = c.config.TowerClient.VMVolume.GetVMVolumes(getParams)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(getRes.Payload) > 0 {
+		// If volume is in creating, return error and wait for next requeue.
+		if isVolumeInCreating(getRes.Payload[0]) {
+			return nil, fmt.Errorf("volume %s is creating now. wait for next requeue", name)
+		}
+
+		return getRes.Payload[0], nil
+	}
+
+	return nil, status.Error(codes.InvalidArgument,
+		fmt.Sprintf("failed to get volume with name: %v", name))
 }
 
 func (c *controllerServer) ControllerPublishVolume(
@@ -257,7 +272,7 @@ func (c *controllerServer) isVolumePublishedToVM(volumeID, nodeName string) (boo
 				Name: pointy.String(nodeName),
 			},
 			VMVolume: &models.VMVolumeWhereInput{
-				ID: pointy.String(volumeID),
+				LocalID: pointy.String(volumeID),
 			},
 		},
 	}
@@ -426,7 +441,7 @@ func (c *controllerServer) DeleteVolume(
 
 	deleteParams := vmvolume.NewDeleteVMVolumeFromVMParams()
 	deleteParams.RequestBody = &models.VMVolumeDeletionParams{Where: &models.VMVolumeWhereInput{
-		ID: pointy.String(volumeID),
+		LocalID: pointy.String(volumeID),
 	}}
 
 	deleteRes, err := c.config.TowerClient.VMVolume.DeleteVMVolumeFromVM(deleteParams)
@@ -515,7 +530,7 @@ func (c *controllerServer) unpublishVolumesFromVm(nodeName string) error {
 				Name: pointy.String(nodeName),
 			},
 			VMVolume: &models.VMVolumeWhereInput{
-				IDIn: detachVolumes,
+				LocalIDIn: detachVolumes,
 			},
 		},
 	}
@@ -664,7 +679,7 @@ func (c *controllerServer) getVolume(volumeID string) (*models.VMVolume, error) 
 	getVolumeParams := vmvolume.NewGetVMVolumesParams()
 	getVolumeParams.RequestBody = &models.GetVMVolumesRequestBody{
 		Where: &models.VMVolumeWhereInput{
-			ID: pointer.String(volumeID),
+			LocalID: pointer.String(volumeID),
 		},
 	}
 
@@ -771,7 +786,7 @@ func (c *controllerServer) reconcileVolumeLabel(vmVolume models.VMVolume) error 
 		return nil
 	}
 
-	err = c.addVolumeLabels(*vmVolume.ID, addLabelIDs)
+	err = c.addVolumeLabels(*vmVolume.LocalID, addLabelIDs)
 	if err != nil {
 		return status.Error(codes.Internal, fmt.Sprintf("add label to volume %s failed", *vmVolume.ID))
 	}
@@ -787,7 +802,7 @@ func (c *controllerServer) addVolumeLabels(volumeID string, labels []string) err
 		},
 		Data: &models.AddLabelsToResourcesParamsData{
 			VMVolumes: &models.VMVolumeWhereInput{
-				ID: &volumeID,
+				LocalID: &volumeID,
 			},
 		},
 	}
@@ -913,7 +928,7 @@ func (c *controllerServer) filterNeedAttachVolumes(attachVolumes []string, vm *m
 	getVMVolumeParams := vmvolume.NewGetVMVolumesParams()
 	getVMVolumeParams.RequestBody = &models.GetVMVolumesRequestBody{
 		Where: &models.VMVolumeWhereInput{
-			IDIn: attachVolumes,
+			LocalIDIn: attachVolumes,
 		},
 	}
 
