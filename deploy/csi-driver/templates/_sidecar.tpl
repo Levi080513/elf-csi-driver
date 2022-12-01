@@ -44,7 +44,7 @@ k8s 1.22+
 {{- $snapshotterVersion = "v4.2.1" }}
 {{- $attacherVersion = "v3.3.0" }}
 {{- $resizerVersion = "v1.3.0" }}
-{{- $livenessProbeVersion = "v1.1.0" }}
+{{- $livenessProbeVersion = "v2.8.0" }}
 {{- /*
 k8s 1.17~1.21
 */}}
@@ -53,7 +53,7 @@ k8s 1.17~1.21
 {{- $snapshotterVersion = "v2.1.1" }}
 {{- $attacherVersion = "v2.2.0" }}
 {{- $resizerVersion = "v0.5.0" }}
-{{- $livenessProbeVersion = "v1.1.0" }}
+{{- $livenessProbeVersion = "v2.8.0" }}
 {{- /*
 k8s 1.15~1.16
 */}}
@@ -62,7 +62,7 @@ k8s 1.15~1.16
 {{- $snapshotterVersion = "v1.2.2" }}
 {{- $attacherVersion = "v2.2.0" }}
 {{- $resizerVersion = "v0.5.0" }}
-{{- $livenessProbeVersion = "v1.1.0" }}
+{{- $livenessProbeVersion = "v2.8.0" }}
 {{- /*
 k8s 1.13~1.14
 */}}
@@ -71,7 +71,7 @@ k8s 1.13~1.14
 {{- $snapshotterVersion = "v1.2.2" }}
 {{- $attacherVersion = "v1.1.1" }}
 {{- $resizerVersion = "v0.5.0" }}
-{{- $livenessProbeVersion = "v1.1.0" }}
+{{- $livenessProbeVersion = "v2.8.0" }}
 {{- end }}
 {{- /*
 csi-provisioner sidecar.
@@ -183,7 +183,7 @@ driver-registrar sidecar
 liveness-probe sidecar
 */}}
 - name: liveness-probe
-  image: {{ include "csi-driver.sidecar.registry" . }}/livenessprobe:v1.1.0
+  image: {{ include "csi-driver.sidecar.registry" . }}/livenessprobe:v2.8.0
   resources: {{ toYaml .Values.sidecar.resources.liveness_probe | nindent 4 }}
   args:
     - --csi-address=/csi/csi.sock
