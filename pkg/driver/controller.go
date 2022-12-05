@@ -919,10 +919,12 @@ func (c *controllerServer) filterNeedAttachVolumes(volumeIDsToBeAttached []strin
 			IDIn: volumeIDsToBeAttached,
 		},
 	}
+
 	getVMVolumesRes, err := c.config.TowerClient.VMVolume.GetVMVolumes(getVMVolumeParams)
 	if err != nil {
 		return nil, err
 	}
+
 	volumesToBeAttached = getVMVolumesRes.Payload
 	if len(volumesToBeAttached) == 0 {
 		// Return early when all volumes to be attached to this VM are not found in Tower.
@@ -942,6 +944,7 @@ func (c *controllerServer) filterNeedAttachVolumes(volumeIDsToBeAttached []strin
 		if _, ok := vmVolumeInTowerIDMap[volumeID]; ok {
 			continue
 		}
+
 		skipReasons = append(skipReasons, fmt.Sprintf("ERROR: volume %s is not found in Tower", volumeID))
 	}
 
@@ -957,23 +960,28 @@ func (c *controllerServer) filterNeedAttachVolumes(volumeIDsToBeAttached []strin
 			},
 		},
 	}
+
 	getVMDiskResp, err := c.config.TowerClient.VMDisk.GetVMDisks(getVMDiskParams)
 	if err != nil {
 		return nil, err
 	}
 	// attachedVolumeIDsMap is map for Volume ID which has attached to VM.
 	attachedVolumeIDsMap := make(map[string]bool)
+
 	for _, vmDisk := range getVMDiskResp.Payload {
 		if vmDisk.VMVolume == nil {
 			continue
 		}
+
 		if vmDisk.VMVolume.ID == nil {
 			continue
 		}
+
 		attachedVolumeIDsMap[*vmDisk.VMVolume.ID] = true
 	}
 
 	volumesNeedAttach := []string{}
+
 	for _, volume := range volumesToBeAttached {
 		// If volume ID is in attachedVolumesIDMap, it means the volume is already attached on this VM.
 		if _, ok := attachedVolumeIDsMap[*volume.ID]; ok {
