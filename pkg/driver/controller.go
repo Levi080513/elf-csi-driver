@@ -904,79 +904,102 @@ func (c *controllerServer) addDetachVolume(volumeID, nodeName string) {
 //  1. Volume is not found in Tower.
 //  2. Volume has mounted on this VM.
 //  3. Volume has mounted on other VM.
-func (c *controllerServer) filterNeedAttachVolumes(attachVolumes []string, vm *models.VM) ([]string, error) {
+func (c *controllerServer) filterNeedAttachVolumes(volumeIDsToBeAttached []string, vm *models.VM) ([]string, error) {
 	// Return early when attachVolumes length is 0.
-	if len(attachVolumes) == 0 {
+	if len(volumeIDsToBeAttached) == 0 {
 		return nil, nil
 	}
 
+	// Get all volumes to be attached to this VM by volume IDs in volumesToBeAttached.
+	// It will not include the volumes which are not found in Tower.
+	var volumesToBeAttached []*models.VMVolume
 	getVMVolumeParams := vmvolume.NewGetVMVolumesParams()
 	getVMVolumeParams.RequestBody = &models.GetVMVolumesRequestBody{
 		Where: &models.VMVolumeWhereInput{
-			IDIn: attachVolumes,
+			IDIn: volumeIDsToBeAttached,
 		},
 	}
 
-	// GetVMVolumes will filter volume which need attach to VM is not found in Tower.
-	getVMVolumeRes, err := c.config.TowerClient.VMVolume.GetVMVolumes(getVMVolumeParams)
+	getVMVolumesRes, err := c.config.TowerClient.VMVolume.GetVMVolumes(getVMVolumeParams)
 	if err != nil {
 		return nil, err
 	}
 
-	// Return early when all volumes which need attach to VM are not found in Tower.
-	if len(getVMVolumeRes.Payload) == 0 {
-		klog.Infof("All volumes %v which need attach to VM %s is not found in Tower", attachVolumes, vm.Name)
+	volumesToBeAttached = getVMVolumesRes.Payload
+	if len(volumesToBeAttached) == 0 {
+		// Return early when all volumes to be attached to this VM are not found in Tower.
+		klog.Infof("All volumes %v to be attached to VM %s are not found in Tower", volumeIDsToBeAttached, vm.Name)
 		return nil, nil
 	}
 
 	skipReasons := []string{}
 	vmVolumeInTowerIDMap := make(map[string]bool)
 
-	for _, vmVolume := range getVMVolumeRes.Payload {
+	for _, vmVolume := range volumesToBeAttached {
 		vmVolumeInTowerIDMap[*vmVolume.ID] = true
 	}
 
 	// record skip reason for volume is not found in Tower.
-	for _, attachVolume := range attachVolumes {
-		if _, ok := vmVolumeInTowerIDMap[attachVolume]; ok {
+	for _, volumeID := range volumeIDsToBeAttached {
+		if _, ok := vmVolumeInTowerIDMap[volumeID]; ok {
 			continue
 		}
 
-		skipReasons = append(skipReasons, fmt.Sprintf("volume %s is not found in Tower", attachVolume))
+		skipReasons = append(skipReasons, fmt.Sprintf("ERROR: volume %s is not found in Tower", volumeID))
 	}
 
-	// vmDiskIDMap is map for VMDisk ID in this VM.
-	vmDiskIDMap := make(map[string]bool)
-
-	for _, vmDisk := range vm.VMDisks {
-		vmDiskIDMap[*vmDisk.ID] = true
+	// Get all VMDisks of this VM related to the volumes to be attached.
+	getVMDiskParams := vmdisk.NewGetVMDisksParams()
+	getVMDiskParams.RequestBody = &models.GetVMDisksRequestBody{
+		Where: &models.VMDiskWhereInput{
+			VM: &models.VMWhereInput{
+				ID: vm.ID,
+			},
+			VMVolume: &models.VMVolumeWhereInput{
+				IDIn: volumeIDsToBeAttached,
+			},
+		},
 	}
 
-	needAttachVolumes := []string{}
+	getVMDiskResp, err := c.config.TowerClient.VMDisk.GetVMDisks(getVMDiskParams)
+	if err != nil {
+		return nil, err
+	}
+	// attachedVolumeIDsMap is map for Volume ID which has attached to VM.
+	attachedVolumeIDsMap := make(map[string]bool)
 
-	for _, volume := range getVMVolumeRes.Payload {
-		// Volume VMDisks length is 0 means the volume has not mounted,
-		// should append to attach volumes.
-		if len(volume.VMDisks) == 0 {
-			needAttachVolumes = append(needAttachVolumes, *volume.ID)
+	for _, vmDisk := range getVMDiskResp.Payload {
+		if vmDisk.VMVolume == nil {
 			continue
 		}
 
-		// If volume VMDisk ID is not in vmDiskIDMap,
-		// means the volume has mounted on other VM.
-		// skipping attach to this VM.
-		if _, ok := vmDiskIDMap[*volume.VMDisks[0].ID]; !ok {
-			skipReasons = append(skipReasons, fmt.Sprintf("volume %s is already mounted in other vm", *volume.ID))
+		if vmDisk.VMVolume.ID == nil {
 			continue
 		}
 
-		// If volume VMDisk ID is in vmDiskIDMap,
-		// means the volume has mounted on this VM.
-		// skipping attach to this VM.
-		skipReasons = append(skipReasons, fmt.Sprintf("volume %s already attached, corresponding vm disk: %v", *volume.ID, volume.VMDisks))
+		attachedVolumeIDsMap[*vmDisk.VMVolume.ID] = true
 	}
 
-	klog.Infof("Skip volumes for reason %s", strings.Join(skipReasons, ","))
+	volumesNeedAttach := []string{}
 
-	return needAttachVolumes, nil
+	for _, volume := range volumesToBeAttached {
+		// If volume ID is in attachedVolumesIDMap, it means the volume is already attached on this VM.
+		if _, ok := attachedVolumeIDsMap[*volume.ID]; ok {
+			skipReasons = append(skipReasons, fmt.Sprintf("volume %s was already attached, corresponding vm disk: %v", *volume.Name, volume.VMDisks))
+			continue
+		}
+
+		// If volume sharing is false and VMDisks length is not 0, means the volume is not sharing volume but already attached in other vm.
+		// This is unexpected due to Tower error. Need to skip attaching this volume, and handle it in future reconcile.
+		if !*volume.Sharing && len(volume.VMDisks) != 0 {
+			skipReasons = append(skipReasons, fmt.Sprintf("ERROR: volume %s is still attached to another vm, so can not attach it to vm %s", *volume.Name, *vm.Name))
+			continue
+		}
+
+		volumesNeedAttach = append(volumesNeedAttach, *volume.ID)
+	}
+
+	klog.Infof("Skip attaching volumes due to: %s", strings.Join(skipReasons, ","))
+
+	return volumesNeedAttach, nil
 }
