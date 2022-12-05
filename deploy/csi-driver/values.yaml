@@ -45,6 +45,8 @@ driver:
   nameOverride: ""
   # kubernetes-cluster-id
   clusterID: "my-cluster"
+  # featureGates is a map of feature names to bools that enable or disable alpha/experimental features.
+  featureGates: ""
   # CloudTower Server
   cloudTowerServer:
     # with `true` to create Secret

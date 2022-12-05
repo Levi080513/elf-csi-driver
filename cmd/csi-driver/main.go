@@ -17,6 +17,7 @@ import (
 	snapshotclientset "github.com/kubernetes-csi/external-snapshotter/client/v4/clientset/versioned"
 	towerclient "github.com/smartxworks/cloudtower-go-sdk/v2/client"
 	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
+	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -25,6 +26,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/smartxworks/elf-csi-driver/pkg/driver"
+	"github.com/smartxworks/elf-csi-driver/pkg/feature"
 	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 )
 
@@ -46,10 +48,16 @@ var (
 )
 
 func main() {
+	// init ELF CSI feature gates.
+	feature.Init()
+
 	klog.InitFlags(nil)
 	defer klog.Flush()
 
-	flag.Parse()
+	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
+	feature.MutableGates.AddFlag(pflag.CommandLine)
+
+	pflag.Parse()
 
 	config := &driver.DriverConfig{}
 	initCommonConfig(config)

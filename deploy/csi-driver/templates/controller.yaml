@@ -43,13 +43,14 @@ spec:
           - /usr/bin/bash          
           args:
             - /usr/sbin/csi-entrypoint.sh
-            - -csi_addr=unix:///csi/csi.sock
-            - -driver_name={{- include "csi-driver.driver.name" .}}
-            - -role=controller
-            - -namespace=$(NAMESPACE)
-            - -node_map={{ include "csi-driver.fullname" . }}-node-map
-            - -cluster_id={{ .Values.driver.clusterID }}
-            - -v=2
+            - --csi_addr=unix:///csi/csi.sock
+            - --driver_name={{- include "csi-driver.driver.name" .}}
+            - --role=controller
+            - --namespace=$(NAMESPACE)
+            - --node_map={{ include "csi-driver.fullname" . }}-node-map
+            - --cluster_id={{ .Values.driver.clusterID }}
+            - --v=2
+            - --feature-gates={{ .Values.driver.featureGates}}
           volumeMounts:
             - name: socket-dir
               mountPath: /csi

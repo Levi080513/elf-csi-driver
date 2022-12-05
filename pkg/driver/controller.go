@@ -28,6 +28,7 @@ import (
 	vmvolume "github.com/smartxworks/cloudtower-go-sdk/v2/client/vm_volume"
 	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
 
+	"github.com/smartxworks/elf-csi-driver/pkg/feature"
 	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 )
 
@@ -52,18 +53,21 @@ type controllerServer struct {
 	config   *DriverConfig
 	keyMutex utils.KeyMutex
 
-	volumeAttachList map[string][]string
-	volumeDetachList map[string][]string
+	// volumesToBeAttachedMap is the map of VM name to volumes which will be attached to this VM.
+	volumesToBeAttachedMap map[string][]string
+
+	// volumesToBeDetachedMap is the map of VM name to volumes which will be detached from this VM.
+	volumesToBeDetachedMap map[string][]string
 
 	batchLock sync.Mutex
 }
 
 func newControllerServer(config *DriverConfig) *controllerServer {
 	return &controllerServer{
-		config:           config,
-		keyMutex:         utils.NewKeyMutex(),
-		volumeAttachList: map[string][]string{},
-		volumeDetachList: map[string][]string{},
+		config:                 config,
+		keyMutex:               utils.NewKeyMutex(),
+		volumesToBeAttachedMap: map[string][]string{},
+		volumesToBeDetachedMap: map[string][]string{},
 	}
 }
 
@@ -218,18 +222,33 @@ func (c *controllerServer) ControllerPublishVolume(
 		return nil, err
 	}
 
-	// The volume is already published to VM,
+	// The volume is already published to this VM,
+	// remove the volume from volume list which need attach to this VM,
 	// skip publish and marking ControllerPublishVolume as successful.
 	if ok {
+		c.RemoveVolumeFromVolumesToBeAttached(volumeID, nodeName)
 		klog.Infof("VM Volume %s is already published in VM %s, skip publish", volumeID, nodeName)
+
 		return &csi.ControllerPublishVolumeResponse{}, nil
 	}
 
-	c.addAttachVolume(volumeID, nodeName)
+	if feature.Gates.Enabled(feature.BatchProcessVolume) {
+		// If batch publish/unpublish volume is enabled,
+		// regardless of whether the lock can be obtained,
+		// add volume to the volume list which need attach to this VM,
+		// this way we can publish multiple volumes to this VM at a time.
+		c.addVolumeToVolumesToBeAttached(volumeID, nodeName)
 
-	lock := c.keyMutex.TryLockKey(nodeName)
-	if !lock {
-		return nil, status.Error(codes.Internal, "VM is updating now, record publish request and return")
+		lock := c.keyMutex.TryLockKey(nodeName)
+		if !lock {
+			return nil, status.Error(codes.Internal, "VM is updating now, record publish request and return")
+		}
+	} else {
+		// If batch publish/unpublish volume is disabled,
+		// lock to prevent other volumes that need to be attached from joining attach volume list，
+		// make sure only one volume can be attached to the VM at a time.
+		c.keyMutex.LockKey(nodeName)
+		c.addVolumeToVolumesToBeAttached(volumeID, nodeName)
 	}
 
 	defer func() {
@@ -327,7 +346,7 @@ func (c *controllerServer) publishVolumesToVm(nodeName string) ([]string, error)
 	}
 
 	// get volumes which need to publish to this VM.
-	attachVolumes := c.GetAttachVolumesAndReset(nodeName)
+	attachVolumes := c.GetVolumesToBeAttachedAndReset(nodeName)
 
 	needAttachVolumes, err := c.filterNeedAttachVolumes(attachVolumes, getVMRes.Payload[0])
 	if err != nil {
@@ -475,18 +494,33 @@ func (c *controllerServer) ControllerUnpublishVolume(
 		return nil, err
 	}
 
-	// The volume is already unpublished from VM,
+	// The volume is already unpublished from this VM,
+	// remove volume from volume list which need detach from this VM,
 	// skip unpublish and marking ControllerUnpublishVolume as successful.
 	if !ok {
+		c.RemoveVolumeFromVolumesToBeDetached(volumeID, nodeName)
 		klog.Infof("VM Volume %s is already unpublished in VM %s, skip unpublish", volumeID, nodeName)
+
 		return &csi.ControllerUnpublishVolumeResponse{}, nil
 	}
 
-	c.addDetachVolume(volumeID, nodeName)
+	if feature.Gates.Enabled(feature.BatchProcessVolume) {
+		// If batch publish/unpublish volume is enabled,
+		// regardless of whether the key lock can be obtained,
+		// add volume to the volume list which need detach from this VM,
+		// this way we can unpublish multiple volumes from this VM at a time.
+		c.addVolumeToVolumesToBeDetached(volumeID, nodeName)
 
-	lock := c.keyMutex.TryLockKey(nodeName)
-	if !lock {
-		return nil, status.Error(codes.Internal, "VM is updating now, record unpublish request and return")
+		lock := c.keyMutex.TryLockKey(nodeName)
+		if !lock {
+			return nil, status.Error(codes.Internal, "VM is updating now, record unpublish request and return")
+		}
+	} else {
+		// If batch publish/unpublish volume is disabled,
+		// lock to prevent other volumes that need to be detached from joining detach volume list，
+		// make sure only one volume can be detached to the VM at a time.
+		c.keyMutex.LockKey(nodeName)
+		c.addVolumeToVolumesToBeDetached(volumeID, nodeName)
 	}
 
 	defer func() {
@@ -502,7 +536,7 @@ func (c *controllerServer) ControllerUnpublishVolume(
 
 // unpublishVolumesFromVm is the batch func to detach disk from VM.
 func (c *controllerServer) unpublishVolumesFromVm(nodeName string) error {
-	detachVolumes := c.GetDetachVolumesAndReset(nodeName)
+	detachVolumes := c.GetVolumesToBeDetachedAndReset(nodeName)
 
 	if len(detachVolumes) == 0 {
 		return nil
@@ -844,60 +878,6 @@ func (c *controllerServer) waitTask(id *string) error {
 			}
 		}
 	}
-}
-
-func (c *controllerServer) addAttachVolume(volumeID, nodeName string) {
-	c.batchLock.Lock()
-	defer c.batchLock.Unlock()
-
-	_, ok := c.volumeAttachList[nodeName]
-	if !ok {
-		c.volumeAttachList[nodeName] = []string{}
-	}
-
-	for _, attachVolume := range c.volumeAttachList[nodeName] {
-		if volumeID == attachVolume {
-			return
-		}
-	}
-
-	c.volumeAttachList[nodeName] = append(c.volumeAttachList[nodeName], volumeID)
-}
-
-func (c *controllerServer) GetAttachVolumesAndReset(nodeName string) []string {
-	c.batchLock.Lock()
-	defer c.batchLock.Unlock()
-	volumeList := c.volumeAttachList[nodeName]
-	c.volumeAttachList[nodeName] = []string{}
-
-	return volumeList
-}
-
-func (c *controllerServer) GetDetachVolumesAndReset(nodeName string) []string {
-	c.batchLock.Lock()
-	defer c.batchLock.Unlock()
-	volumeList := c.volumeDetachList[nodeName]
-	c.volumeDetachList[nodeName] = []string{}
-
-	return volumeList
-}
-
-func (c *controllerServer) addDetachVolume(volumeID, nodeName string) {
-	c.batchLock.Lock()
-	defer c.batchLock.Unlock()
-
-	_, ok := c.volumeDetachList[nodeName]
-	if !ok {
-		c.volumeDetachList[nodeName] = []string{}
-	}
-
-	for _, detachVolume := range c.volumeDetachList[nodeName] {
-		if volumeID == detachVolume {
-			return
-		}
-	}
-
-	c.volumeDetachList[nodeName] = append(c.volumeDetachList[nodeName], volumeID)
 }
 
 // filterNeedAttachVolumes is a func to filter attach volumes in following case:
