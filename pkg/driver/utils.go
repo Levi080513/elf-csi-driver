@@ -316,3 +316,12 @@ func isVolumeInCreating(vmVolume *models.VMVolume) bool {
 
 	return false
 }
+
+// If VM EntityAsyncStatus is not nil, means VM is updating now.
+func isVMInUpdating(vm *models.VM) bool {
+	if vm.EntityAsyncStatus != nil {
+		return true
+	}
+
+	return false
+}

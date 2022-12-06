@@ -5,7 +5,6 @@ package driver
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/rpc"
@@ -46,8 +45,6 @@ const (
 	// Tower will keep volume after VM which volume mounted has deleted.
 	defaultKeepAfterVMDeleteLabelKey = "system.cloudtower/keep-after-delete-vm"
 )
-
-var ErrVMVolumeNotFound = errors.New("volume is not found")
 
 type controllerServer struct {
 	config   *DriverConfig
@@ -328,27 +325,24 @@ func (c *controllerServer) canPublishToNode(nodeAddr string) error {
 //  2. Volume has mounted on this VM.
 //  3. Volume has mounted on other VM.
 func (c *controllerServer) publishVolumesToVm(nodeName string) ([]string, error) {
-	getVmParams := vm.NewGetVmsParams()
-	getVmParams.RequestBody = &models.GetVmsRequestBody{
-		Where: &models.VMWhereInput{
-			Name: pointy.String(nodeName),
-		},
+	targetVM, err := c.getVMByName(nodeName)
+	// Due to Tower problems in some special cases, we may not able to get VM from Tower, but the VM is actually running well in ELF cluster and kubelet is ready.
+	// So need to return failure and let it requeue until Tower gets the VM back or the K8s node is deleted.
+	if err == ErrVMNotFound {
+		klog.Info(fmt.Sprintf(VMNotFoundInTowerErrorMessage, nodeName) + "marking ControllerPublishVolume as failed")
+		return nil, fmt.Errorf("failed to attach volume to VM, %s", fmt.Sprintf(VMNotFoundInTowerErrorMessage, nodeName))
 	}
 
-	getVMRes, err := c.config.TowerClient.VM.GetVms(getVmParams)
-	if err != nil {
-		return nil, err
-	}
-
-	// Return failed when the VM which volume will publish to is not found in Tower.
-	if len(getVMRes.Payload) < 1 {
-		return nil, fmt.Errorf("unable to get VM: %v", nodeName)
+	// Task which attach volumes to the VM will be failed when this VM is in updating,
+	// return failed early.
+	if isVMInUpdating(targetVM) {
+		return nil, fmt.Errorf("failed to attach volumes to VM %s, because this VM is being updated", nodeName)
 	}
 
 	// get volumes which need to publish to this VM.
 	attachVolumes := c.GetVolumesToBeAttachedAndReset(nodeName)
 
-	needAttachVolumes, err := c.filterNeedAttachVolumes(attachVolumes, getVMRes.Payload[0])
+	needAttachVolumes, err := c.filterNeedAttachVolumes(attachVolumes, targetVM)
 	if err != nil {
 		klog.Errorf("failed to filter volumes %v which need attach to VM %s. error %s", attachVolumes, nodeName, err.Error())
 		return nil, err
@@ -375,7 +369,7 @@ func (c *controllerServer) publishVolumesToVm(nodeName string) ([]string, error)
 		mountParam := &models.MountDisksParams{
 			Index:      pointy.Int32(int32(index)),
 			VMVolumeID: pointy.String(needAttachVolume),
-			Boot:       pointy.Int32(int32(len(getVMRes.Payload[0].VMDisks) + 1 + index)),
+			Boot:       pointy.Int32(int32(len(targetVM.VMDisks) + 1 + index)),
 			Bus:        models.BusVIRTIO.Pointer(),
 		}
 		updateParams.RequestBody.Data.VMDisks.MountDisks = append(updateParams.RequestBody.Data.VMDisks.MountDisks, mountParam)
@@ -536,6 +530,22 @@ func (c *controllerServer) ControllerUnpublishVolume(
 
 // unpublishVolumesFromVm is the batch func to detach disk from VM.
 func (c *controllerServer) unpublishVolumesFromVm(nodeName string) error {
+	targetVM, err := c.getVMByName(nodeName)
+	// Tower will keep volumes which has attached to this VM and created by ELF CSI after this VM delete,
+	// so if VM is not present in SMTX OS ELF or moved to the recycle bin,
+	// means volume has already detached from this VM,
+	// so marking ControllerUnpublishVolume as successful.
+	if err == ErrVMNotFound {
+		klog.Info(fmt.Sprintf(VMNotFoundInTowerErrorMessage, nodeName) + "marking ControllerUnpublishVolume as successful")
+		return nil
+	}
+
+	// Task which detach volumes from the VM will be failed when this VM is in updating,
+	// return failed early.
+	if isVMInUpdating(targetVM) {
+		return fmt.Errorf("failed to detach volumes from VM %s, because this VM is being updated", nodeName)
+	}
+
 	detachVolumes := c.GetVolumesToBeDetachedAndReset(nodeName)
 
 	if len(detachVolumes) == 0 {
@@ -982,4 +992,24 @@ func (c *controllerServer) filterNeedAttachVolumes(volumeIDsToBeAttached []strin
 	klog.Infof("Skip attaching volumes due to: %s", strings.Join(skipReasons, ","))
 
 	return volumesNeedAttach, nil
+}
+
+func (c *controllerServer) getVMByName(vmName string) (*models.VM, error) {
+	getVmParams := vm.NewGetVmsParams()
+	getVmParams.RequestBody = &models.GetVmsRequestBody{
+		Where: &models.VMWhereInput{
+			Name: pointy.String(vmName),
+		},
+	}
+
+	getVMRes, err := c.config.TowerClient.VM.GetVms(getVmParams)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(getVMRes.Payload) == 0 {
+		return nil, ErrVMNotFound
+	}
+
+	return getVMRes.Payload[0], nil
 }
