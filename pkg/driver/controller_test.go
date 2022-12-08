@@ -6,6 +6,7 @@ package driver
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/mock/gomock"
@@ -230,7 +231,7 @@ var _ = Describe("CSI Driver Controller Test", func() {
 			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return(nil, nil)
 			mockTowerService.EXPECT().GetVM(*vm.Name).Return(nil, service.ErrVMNotFound)
 			_, err := driver.ControllerPublishVolume(ctx, controllerPublishVolumeRequest)
-			Expect(err.Error()).Should(ContainSubstring(service.ErrVMNotFound.Error()))
+			Expect(err.Error()).Should(ContainSubstring(fmt.Sprintf(VMNotFoundInTowerErrorMessage, *vm.Name)))
 		})
 
 		It("it should return error when volume not found", func() {
@@ -339,6 +340,7 @@ var _ = Describe("CSI Driver Controller Test", func() {
 			removeVMDiskTask.Status = &taskStatusSuccess
 			controllerPublishVolumeRequest := testutil.NewControllerUnpublishVolumeRequest(*volume.ID, *vm.ID, false)
 
+			mockTowerService.EXPECT().GetVM(*vm.Name).Return(vm, nil)
 			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return([]*models.VMDisk{vmDisk}, nil).Times(2)
 			mockTowerService.EXPECT().RemoveVMDisks(*vm.Name, []string{*vmDisk.ID}).Return(removeVMDiskTask, nil)
 			mockTowerService.EXPECT().GetTask(*removeVMDiskTask.ID).Return(removeVMDiskTask, nil)
