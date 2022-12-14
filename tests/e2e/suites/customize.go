@@ -6,6 +6,7 @@ package suites
 import (
 	"context"
 	"crypto/rand"
+	"k8s.io/klog"
 	"math/big"
 	"strconv"
 	"time"
@@ -71,7 +72,7 @@ func (c *customSuites) DefineTests() {
 		framework.ExpectNoError(err)
 	})
 
-	ginkgo.It("[custom] create pod which mount 10 pvc", func() {
+	ginkgo.It("[custom] [performance] create pod which mount 10 pvc", func() {
 		pvcNum := 10
 
 		scParameterGroups := NewStorageClassParameterGroups()
@@ -104,10 +105,102 @@ func (c *customSuites) DefineTests() {
 		}
 
 		// create pod which mount 10 pvcs, wait pod running
-		pod, err := e2epod.CreateSecPod(c.ClientSet, &podConfig, time.Minute*5)
+		podStartNow := time.Now()
+		klog.Infof("10 pv test start now %s", podStartNow.String())
+		pod, err := e2epod.CreateSecPod(c.ClientSet, &podConfig, time.Minute*30)
 		defer func() {
 			framework.ExpectNoError(e2epod.DeletePodWithWait(c.ClientSet, pod))
 		}()
+		podStartFinishNow := time.Now()
+		klog.Infof("10 pv test end now %s, spend %d", podStartFinishNow.String(), podStartFinishNow.Unix()-podStartNow.Unix())
+		framework.ExpectNoError(err)
+	})
+
+	ginkgo.It("[custom] [performance] create pod which mount 30 pvc", func() {
+		pvcNum := 30
+
+		scParameterGroups := NewStorageClassParameterGroups()
+		r, _ := rand.Int(rand.Reader, big.NewInt(int64(len(scParameterGroups))))
+		parameters := scParameterGroups[int(r.Int64())]
+
+		sc, err := utils.CreateStorageClass(c.ClientSet, csiDriverName, parameters, nil, c.Namespace.Name)
+		framework.ExpectNoError(err)
+
+		// create 30 pvcs
+		pvcNames := make([]string, pvcNum)
+		mountPvcs := make([]*corev1.PersistentVolumeClaim, pvcNum)
+		for i := 0; i < pvcNum; i++ {
+			pvc, createErr := utils.CreatePVC(c.ClientSet, pvcNamePrefix+strconv.Itoa(i), c.Namespace.Name,
+				sc.Name, "1Gi", corev1.PersistentVolumeFilesystem)
+			framework.ExpectNoError(createErr)
+
+			pvcNames[i] = pvc.Name
+			mountPvcs[i] = pvc
+		}
+
+		// wait all pvc success bound pv
+		err = utils.WaitForPersistentVolumeClaimsPhase(c.ClientSet, corev1.ClaimBound, c.Namespace.Name,
+			pvcNames, 5*time.Second, 5*time.Minute)
+		framework.ExpectNoError(err)
+
+		podConfig := e2epod.Config{
+			PVCs: mountPvcs,
+			NS:   c.Namespace.Name,
+		}
+
+		// create pod which mount 30 pvcs, wait pod running
+		podStartNow := time.Now()
+		klog.Infof("30 pv test start now %s", podStartNow.String())
+		pod, err := e2epod.CreateSecPod(c.ClientSet, &podConfig, time.Minute*30)
+		defer func() {
+			framework.ExpectNoError(e2epod.DeletePodWithWait(c.ClientSet, pod))
+		}()
+		podStartFinishNow := time.Now()
+		klog.Infof("30 pv test end now %s, spend %d", podStartFinishNow.String(), podStartFinishNow.Unix()-podStartNow.Unix())
+		framework.ExpectNoError(err)
+	})
+
+	ginkgo.It("[custom] [performance] create pod which mount 60 pvc", func() {
+		pvcNum := 60
+
+		scParameterGroups := NewStorageClassParameterGroups()
+		r, _ := rand.Int(rand.Reader, big.NewInt(int64(len(scParameterGroups))))
+		parameters := scParameterGroups[int(r.Int64())]
+
+		sc, err := utils.CreateStorageClass(c.ClientSet, csiDriverName, parameters, nil, c.Namespace.Name)
+		framework.ExpectNoError(err)
+
+		// create 60 pvcs
+		pvcNames := make([]string, pvcNum)
+		mountPvcs := make([]*corev1.PersistentVolumeClaim, pvcNum)
+		for i := 0; i < pvcNum; i++ {
+			pvc, createErr := utils.CreatePVC(c.ClientSet, pvcNamePrefix+strconv.Itoa(i), c.Namespace.Name,
+				sc.Name, "1Gi", corev1.PersistentVolumeFilesystem)
+			framework.ExpectNoError(createErr)
+
+			pvcNames[i] = pvc.Name
+			mountPvcs[i] = pvc
+		}
+
+		// wait all pvc success bound pv
+		err = utils.WaitForPersistentVolumeClaimsPhase(c.ClientSet, corev1.ClaimBound, c.Namespace.Name,
+			pvcNames, 5*time.Second, 5*time.Minute)
+		framework.ExpectNoError(err)
+
+		podConfig := e2epod.Config{
+			PVCs: mountPvcs,
+			NS:   c.Namespace.Name,
+		}
+
+		// create pod which mount 60 pvcs, wait pod running
+		podStartNow := time.Now()
+		klog.Infof("60 pv test start now %s", podStartNow.String())
+		pod, err := e2epod.CreateSecPod(c.ClientSet, &podConfig, time.Minute*30)
+		defer func() {
+			framework.ExpectNoError(e2epod.DeletePodWithWait(c.ClientSet, pod))
+		}()
+		podStartFinishNow := time.Now()
+		klog.Infof("60 pv test end now %s, spend %d", podStartFinishNow.String(), podStartFinishNow.Unix()-podStartNow.Unix())
 		framework.ExpectNoError(err)
 	})
 
