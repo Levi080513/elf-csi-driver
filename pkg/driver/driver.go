@@ -68,6 +68,9 @@ type DriverConfig struct {
 	// kubernetes cluster id
 	ClusterID string
 
+	// preferred VM bus for volume attach to VM
+	PreferredVolumeBusType string
+
 	// node id to identify node
 	NodeID string
 	// csi grpc server listen addr
@@ -157,6 +160,11 @@ func (d *Driver) Run(stopCh <-chan struct{}) error {
 		}
 
 		err = d.nodeLivenessServer.Run(stopCh)
+		if err != nil {
+			return err
+		}
+
+		err = d.node.Run(stopCh)
 		if err != nil {
 			return err
 		}

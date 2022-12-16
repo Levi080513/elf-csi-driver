@@ -47,6 +47,9 @@ driver:
   clusterID: "my-cluster"
   # featureGates is a map of feature names to bools that enable or disable alpha/experimental features.
   featureGates: ""
+  # preferredVolumeBusType is the preferred VM bus for volume attach to VM.
+  # only support VIRTIO and SCSI.
+  preferredVolumeBusType: VIRTIO
   # CloudTower Server
   cloudTowerServer:
     # with `true` to create Secret

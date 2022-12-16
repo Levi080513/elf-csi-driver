@@ -5,6 +5,7 @@ go 1.14
 require (
 	github.com/container-storage-interface/spec v1.3.0
 	github.com/evanphx/json-patch v4.11.0+incompatible // indirect
+	github.com/fsnotify/fsnotify v1.4.9
 	github.com/go-openapi/runtime v0.24.1
 	github.com/golang/protobuf v1.5.2
 	github.com/googleapis/gnostic v0.5.5 // indirect

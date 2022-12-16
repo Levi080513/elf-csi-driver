@@ -46,6 +46,12 @@ const (
 	defaultKeepAfterVMDeleteLabelKey = "system.cloudtower/keep-after-delete-vm"
 )
 
+// maxAllowedVolumesForSupportBusMap is the map of ELF CSI support attached VM Bus to max allowed volumes mount for the bus.
+var maxAllowedVolumesForSupportBusMap = map[models.Bus]int{
+	models.BusVIRTIO: 32,
+	models.BusSCSI:   32,
+}
+
 type controllerServer struct {
 	config   *DriverConfig
 	keyMutex utils.KeyMutex
@@ -266,24 +272,12 @@ func (c *controllerServer) ControllerPublishVolume(
 }
 
 func (c *controllerServer) isVolumePublishedToVM(volumeID, nodeName string) (bool, error) {
-	getVMDiskParams := vmdisk.NewGetVMDisksParams()
-	getVMDiskParams.RequestBody = &models.GetVMDisksRequestBody{
-		Where: &models.VMDiskWhereInput{
-			VM: &models.VMWhereInput{
-				Name: pointy.String(nodeName),
-			},
-			VMVolume: &models.VMVolumeWhereInput{
-				ID: pointy.String(volumeID),
-			},
-		},
-	}
-
-	getVMDiskRes, err := c.config.TowerClient.VMDisk.GetVMDisks(getVMDiskParams)
+	vmDisks, err := c.getVMDisksByVolumeIDs(nodeName, []string{volumeID})
 	if err != nil {
 		return true, err
 	}
 
-	if len(getVMDiskRes.Payload) == 0 {
+	if len(vmDisks) == 0 {
 		return false, nil
 	}
 
@@ -353,6 +347,18 @@ func (c *controllerServer) publishVolumesToVm(nodeName string) ([]string, error)
 		return nil, nil
 	}
 
+	targetBus, freeSeatsOnBus, err := c.GetAvailableBusForVolumes(targetVM)
+	if err != nil {
+		return nil, err
+	}
+
+	// To make sure AddVMDisk task success, we should reduce volumes which need attach to this VM in this publish
+	// when freeSeatsOnBus < number of needAttachVolumes.
+	// reduced volumes will join attach volume list in the next volume publish.
+	if freeSeatsOnBus > 0 && freeSeatsOnBus < len(needAttachVolumes) {
+		needAttachVolumes = needAttachVolumes[:freeSeatsOnBus]
+	}
+
 	updateParams := vm.NewAddVMDiskParams()
 	updateParams.RequestBody = &models.VMAddDiskParams{
 		Where: &models.VMWhereInput{
@@ -370,7 +376,7 @@ func (c *controllerServer) publishVolumesToVm(nodeName string) ([]string, error)
 			Index:      pointy.Int32(int32(index)),
 			VMVolumeID: pointy.String(needAttachVolume),
 			Boot:       pointy.Int32(int32(len(targetVM.VMDisks) + 1 + index)),
-			Bus:        models.BusVIRTIO.Pointer(),
+			Bus:        &targetBus,
 		}
 		updateParams.RequestBody.Data.VMDisks.MountDisks = append(updateParams.RequestBody.Data.VMDisks.MountDisks, mountParam)
 	}
@@ -552,31 +558,19 @@ func (c *controllerServer) unpublishVolumesFromVm(nodeName string) error {
 		return nil
 	}
 
-	getVmDiskParams := vmdisk.NewGetVMDisksParams()
-	getVmDiskParams.RequestBody = &models.GetVMDisksRequestBody{
-		Where: &models.VMDiskWhereInput{
-			VM: &models.VMWhereInput{
-				Name: pointy.String(nodeName),
-			},
-			VMVolume: &models.VMVolumeWhereInput{
-				IDIn: detachVolumes,
-			},
-		},
-	}
-
-	getVmDiskRes, err := c.config.TowerClient.VMDisk.GetVMDisks(getVmDiskParams)
+	vmDisks, err := c.getVMDisksByVolumeIDs(nodeName, detachVolumes)
 	if err != nil {
 		return err
 	}
 
-	if len(getVmDiskRes.Payload) < 1 {
+	if len(vmDisks) < 1 {
 		klog.Infof("unable to get VM disk in VM %v with volumes %v, skip the unpublish process", nodeName, detachVolumes)
 		return nil
 	}
 
 	removeVMDiskIDs := []string{}
 
-	for _, vmDisk := range getVmDiskRes.Payload {
+	for _, vmDisk := range vmDisks {
 		if vmDisk.ID == nil || *vmDisk.ID == "" {
 			return fmt.Errorf("unable to get disk ID from API in VM %v with volume %v", nodeName, vmDisk.ID)
 		}
@@ -939,26 +933,14 @@ func (c *controllerServer) filterNeedAttachVolumes(volumeIDsToBeAttached []strin
 	}
 
 	// Get all VMDisks of this VM related to the volumes to be attached.
-	getVMDiskParams := vmdisk.NewGetVMDisksParams()
-	getVMDiskParams.RequestBody = &models.GetVMDisksRequestBody{
-		Where: &models.VMDiskWhereInput{
-			VM: &models.VMWhereInput{
-				ID: vm.ID,
-			},
-			VMVolume: &models.VMVolumeWhereInput{
-				IDIn: volumeIDsToBeAttached,
-			},
-		},
-	}
-
-	getVMDiskResp, err := c.config.TowerClient.VMDisk.GetVMDisks(getVMDiskParams)
+	vmDisks, err := c.getVMDisksByVolumeIDs(*vm.Name, volumeIDsToBeAttached)
 	if err != nil {
 		return nil, err
 	}
 	// attachedVolumeIDsMap is map for Volume ID which has attached to VM.
 	attachedVolumeIDsMap := make(map[string]bool)
 
-	for _, vmDisk := range getVMDiskResp.Payload {
+	for _, vmDisk := range vmDisks {
 		if vmDisk.VMVolume == nil {
 			continue
 		}
@@ -994,6 +976,48 @@ func (c *controllerServer) filterNeedAttachVolumes(volumeIDsToBeAttached []strin
 	return volumesNeedAttach, nil
 }
 
+// GetAvailableBusForVolumes returns the available VM bus to which new volumes can be attached and the free seats on this bus.
+func (c *controllerServer) GetAvailableBusForVolumes(vm *models.VM) (models.Bus, int, error) {
+	vmDisks, err := c.getVMDisksByVolumeIDs(*vm.Name, []string{})
+	if err != nil {
+		return "", 0, err
+	}
+
+	// vmBusToAttachNumberMap is the map of VM bus to number of volumes which attach to this bus.
+	busToAttachedVolumesNumberMap := make(map[models.Bus]int)
+
+	for vmBus := range maxAllowedVolumesForSupportBusMap {
+		busToAttachedVolumesNumberMap[vmBus] = 0
+	}
+
+	for _, vmDisk := range vmDisks {
+		if vmDisk.Bus == nil {
+			continue
+		}
+
+		// only record attach volume number of VM Bus which ELF CSI support attach volume to.
+		if _, ok := busToAttachedVolumesNumberMap[*vmDisk.Bus]; !ok {
+			continue
+		}
+
+		busToAttachedVolumesNumberMap[*vmDisk.Bus]++
+	}
+
+	// first check whether preferred VM Bus can be attached.
+	attachedVolumesNumber, ok := busToAttachedVolumesNumberMap[models.Bus(c.config.PreferredVolumeBusType)]
+	if ok && attachedVolumesNumber < maxAllowedVolumesForSupportBusMap[models.Bus(c.config.PreferredVolumeBusType)] {
+		return models.Bus(c.config.PreferredVolumeBusType), maxAllowedVolumesForSupportBusMap[models.Bus(c.config.PreferredVolumeBusType)] - attachedVolumesNumber, nil
+	}
+
+	for vmBus, attachedVolumesNumber := range busToAttachedVolumesNumberMap {
+		if attachedVolumesNumber < maxAllowedVolumesForSupportBusMap[vmBus] {
+			return vmBus, maxAllowedVolumesForSupportBusMap[vmBus] - attachedVolumesNumber, nil
+		}
+	}
+
+	return "", 0, fmt.Errorf("failed to find available VM Bus because all VM Buses are full")
+}
+
 func (c *controllerServer) getVMByName(vmName string) (*models.VM, error) {
 	getVmParams := vm.NewGetVmsParams()
 	getVmParams.RequestBody = &models.GetVmsRequestBody{
@@ -1012,4 +1036,26 @@ func (c *controllerServer) getVMByName(vmName string) (*models.VM, error) {
 	}
 
 	return getVMRes.Payload[0], nil
+}
+
+// getVMDisksByVolumeIDs func will return all VM Disk in this VM when volumeIDs length is 0.
+func (c *controllerServer) getVMDisksByVolumeIDs(nodeName string, volumeIDs []string) ([]*models.VMDisk, error) {
+	getVMDiskParams := vmdisk.NewGetVMDisksParams()
+	getVMDiskParams.RequestBody = &models.GetVMDisksRequestBody{
+		Where: &models.VMDiskWhereInput{
+			VM: &models.VMWhereInput{
+				Name: pointy.String(nodeName),
+			},
+			VMVolume: &models.VMVolumeWhereInput{
+				IDIn: volumeIDs,
+			},
+		},
+	}
+
+	getVMDiskRes, err := c.config.TowerClient.VMDisk.GetVMDisks(getVMDiskParams)
+	if err != nil {
+		return nil, err
+	}
+
+	return getVMDiskRes.Payload, nil
 }

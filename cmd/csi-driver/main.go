@@ -36,15 +36,17 @@ const (
 )
 
 var (
-	csiAddr        = flag.String("csi_addr", "", "csi server addr")
-	driverName     = flag.String("driver_name", "com.smartx.elf-csi-driver", "driver name")
+	csiAddr        = flag.String("csi-addr", "", "csi server addr")
+	driverName     = flag.String("driver-name", "com.smartx.elf-csi-driver", "driver name")
 	role           = flag.String("role", "node", "plugin role: controller / node / all")
-	livenessPort   = flag.Int("liveness_port", -1, "node plugin livness port")
+	livenessPort   = flag.Int("liveness-port", -1, "node plugin livness port")
 	namespace      = flag.String("namespace", "default", "k8s resource namespace used by driver")
-	nodeMap        = flag.String("node_map", "node-map", "node configmap name")
-	kubeConfigPath = flag.String("kube_config_path", "", "kube config path, eg. $HOME/.kube/config")
-	pprofPort      = flag.Int("pprof_port", 0, "")
-	clusterID      = flag.String("cluster_id", "", "kubernetes cluster id")
+	nodeMap        = flag.String("node-map", "node-map", "node configmap name")
+	kubeConfigPath = flag.String("kubeconfig", "", "kube config path, eg. $HOME/.kube/config")
+	pprofPort      = flag.Int("pprof-port", 0, "")
+	clusterID      = flag.String("cluster-id", "", "kubernetes cluster id")
+	// The preferred disk bus type. Default to VIRTIO because the performance of VIRTIO Bus is litter better than SCSI Bus.
+	preferredVolumeBusType = flag.String("preferred-volume-bus-type", "VIRTIO", "preferred VM bus for volume attach to VM")
 )
 
 func main() {
@@ -151,6 +153,7 @@ func initCommonConfig(config *driver.DriverConfig) {
 	config.NodeMap = driver.NewNodeMap(*nodeMap, config.KubeClient.CoreV1().ConfigMaps(*namespace))
 	config.ServerAddr = *csiAddr
 	config.ClusterID = *clusterID
+	config.PreferredVolumeBusType = *preferredVolumeBusType
 
 	cloudTower := &CloudTowerConnect{}
 

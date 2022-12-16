@@ -8,17 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/openlyinc/pointy"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"github.com/openlyinc/pointy"
 	"k8s.io/klog"
 	kmount "k8s.io/utils/mount"
 	"k8s.io/utils/pointer"
@@ -31,9 +28,14 @@ import (
 	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 )
 
+const (
+	maxAllowedVolumesPerNode = 60
+)
+
 type NodeServer interface {
 	csi.NodeServer
 	registerNodeEntry() error
+	Run(stop <-chan struct{}) error
 }
 
 func registerNodeEntry(config *DriverConfig) error {
@@ -59,14 +61,35 @@ func registerNodeEntry(config *DriverConfig) error {
 	return err
 }
 
+type GetDeviceByDiskSerialFunc func(serial string) (string, bool)
+
 type nodeServer struct {
 	config *DriverConfig
+
+	deviceSerialCache *DeviceSerialCache
+
+	GetDeviceByDiskSerialFuncMap map[models.Bus]GetDeviceByDiskSerialFunc
 }
 
 func newNodeServer(config *DriverConfig) *nodeServer {
-	return &nodeServer{
-		config: config,
+	server := &nodeServer{
+		config:                       config,
+		deviceSerialCache:            NewDeviceSerialCache(),
+		GetDeviceByDiskSerialFuncMap: make(map[models.Bus]GetDeviceByDiskSerialFunc),
 	}
+
+	// device ID_SERIAL is disk'serial prefix when volume attach to VIRTIO Bus,
+	// so use GetDeviceByIDSerial to get device.
+	// device ID_SCSI_SERIAL is disk'serial prefix when volume attach to SCSI Bus,
+	// so use GetDeviceByIDSCSISerial to get device.
+	server.GetDeviceByDiskSerialFuncMap[models.BusVIRTIO] = server.deviceSerialCache.getDeviceByIDSerial
+	server.GetDeviceByDiskSerialFuncMap[models.BusSCSI] = server.deviceSerialCache.getDeviceByIDSCSISerial
+
+	return server
+}
+
+func (n *nodeServer) Run(stopCh <-chan struct{}) error {
+	return n.deviceSerialCache.Run(stopCh)
 }
 
 func (n *nodeServer) registerNodeEntry() error {
@@ -514,7 +537,7 @@ func (n *nodeServer) NodeGetInfo(
 	req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
 	return &csi.NodeGetInfoResponse{
 		NodeId:            n.config.NodeID,
-		MaxVolumesPerNode: 66,
+		MaxVolumesPerNode: maxAllowedVolumesPerNode,
 	}, nil
 }
 
@@ -594,23 +617,11 @@ func (n *nodeServer) getVMVolumeSerial(volumeID string) (*string, error) {
 }
 
 func (n *nodeServer) getVMVolumeZBSVolumeID(volumeID string) (*string, error) {
-	getParams := vmvolume.NewGetVMVolumesParams()
-	getParams.RequestBody = &models.GetVMVolumesRequestBody{
-		Where: &models.VMVolumeWhereInput{
-			ID: pointer.String(volumeID),
-		},
-	}
-
-	getRes, err := n.config.TowerClient.VMVolume.GetVMVolumes(getParams)
+	volume, err := n.getVolume(volumeID)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(getRes.Payload) == 0 {
-		return nil, fmt.Errorf("failed to get volume %v", volumeID)
-	}
-
-	volume := getRes.Payload[0]
 	getISCSILunParams := iscsilun.NewGetIscsiLunsParams()
 	getISCSILunParams.RequestBody = &models.GetIscsiLunsRequestBody{
 		Where: &models.IscsiLunWhereInput{
@@ -630,6 +641,37 @@ func (n *nodeServer) getVMVolumeZBSVolumeID(volumeID string) (*string, error) {
 	return getIscsiLunResp.Payload[0].ZbsVolumeID, nil
 }
 
+// getVolumeAttachedBus is func to get VM Bus which volume attach to.
+func (n *nodeServer) getVolumeAttachedBus(volumeID string) (models.Bus, error) {
+	getVMDiskParams := vmdisk.NewGetVMDisksParams()
+	getVMDiskParams.RequestBody = &models.GetVMDisksRequestBody{
+		Where: &models.VMDiskWhereInput{
+			VM: &models.VMWhereInput{
+				Name: pointy.String(n.config.NodeID),
+			},
+			VMVolume: &models.VMVolumeWhereInput{
+				ID: pointy.String(volumeID),
+			},
+		},
+	}
+
+	getVMDiskRes, err := n.config.TowerClient.VMDisk.GetVMDisks(getVMDiskParams)
+	if err != nil {
+		return "", err
+	}
+
+	if len(getVMDiskRes.Payload) == 0 {
+		return "", fmt.Errorf("failed to get VM %v disk for volume %v", n.config.NodeID, volumeID)
+	}
+
+	disk := getVMDiskRes.Payload[0]
+	if disk.Bus == nil {
+		return "", fmt.Errorf("failed to get bus for disk %v", disk.ID)
+	}
+
+	return *disk.Bus, nil
+}
+
 func (n *nodeServer) getVolumeDevice(volumeID string) (*string, error) {
 	device := ""
 
@@ -643,38 +685,36 @@ func (n *nodeServer) getVolumeDevice(volumeID string) (*string, error) {
 		return nil, err
 	}
 
-	lsblkCmd := `lsblk -o "NAME" -e 1,7,11 -d -n`
-
-	output, err := exec.Command("/bin/sh", "-c", lsblkCmd).CombinedOutput()
+	volumeAttachedBus, err := n.getVolumeAttachedBus(volumeID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to lsblk, %v", string(output))
+		return nil, err
 	}
 
-	for _, d := range strings.Fields(string(output)) {
-		udevCmd := fmt.Sprintf("udevadm info --query=all --name=%v | grep ID_SERIAL", d)
+	getDeviceByDiskSerialFunc, ok := n.GetDeviceByDiskSerialFuncMap[volumeAttachedBus]
+	if !ok {
+		return nil, fmt.Errorf("failed to get device, attach bus %s is not support", volumeAttachedBus)
+	}
 
-		idSerialLine, err := exec.Command("/bin/sh", "-c", udevCmd).CombinedOutput()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get ID_SERIAL from udevadm, %v", string(idSerialLine))
-		}
+	// In ELF cluster vhost mode, SERIAL may be the ZBSVolumeID corresponding to the volume,
+	// as long as there is a match between serial and ZBSVolumeID,
+	// the device corresponding to the mounted volume can be confirmed.
+	if targetDevice, ok := getDeviceByDiskSerialFunc(*serial); ok {
+		device = targetDevice
+	}
 
-		idSerial := strings.Split(strings.TrimSpace(string(idSerialLine)), "=")
-		klog.Infof("ID_SERIAL parsed from udevadm is %v, comparing to serial %v zbsVolumeID %v", idSerial, *serial, *zbsVolumeID)
-
-		if len(idSerial) != 2 {
-			continue
-		}
-
-		// In ELF cluster vhost mode, ID_SERIAL may be the ZBSVolumeID corresponding to the volume,
-		// as long as there is a match between serial and ZBSVolumeID,
-		// the device corresponding to the mounted volume can be confirmed.
-		if strings.HasPrefix(*serial, idSerial[1]) || strings.HasPrefix(*zbsVolumeID, idSerial[1]) {
-			device = fmt.Sprintf("/dev/%v", d)
-		}
+	if targetDevice, ok := getDeviceByDiskSerialFunc(*zbsVolumeID); ok {
+		device = targetDevice
 	}
 
 	if device == "" {
-		return nil, fmt.Errorf("failed to get device, raw output is: %v", string(output))
+		// The device may not be found because the cache is not up to date，
+		// resync device serial cache.
+		resyncErr := n.deviceSerialCache.resyncCache()
+		if err != nil {
+			klog.Errorf("failed to resync device serial cache. error %v", resyncErr.Error())
+		}
+
+		return nil, fmt.Errorf("failed to get device, disk serial %s, zbs volume id %s", *serial, *zbsVolumeID)
 	}
 
 	return &device, nil

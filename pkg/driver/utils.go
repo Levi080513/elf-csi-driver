@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/klog"
 )
 
 type volumeFilesystemStats struct {
@@ -324,4 +326,71 @@ func isVMInUpdating(vm *models.VM) bool {
 	}
 
 	return false
+}
+
+// If the name of device symlink has 'virtio-' prefix, means device is attached to VIRTIO Bus.
+func isDeviceInVIRTIOBus(deviceSymlink string) bool {
+	_, deviceSymlinkFileName := path.Split(deviceSymlink)
+	if strings.HasPrefix(deviceSymlinkFileName, symlinkPrefixForAttachedVIRTIOBus) {
+		return true
+	}
+
+	return false
+}
+
+// If the name of device symlink has 'scsi-' prefix, means device is attached to SCSI Bus.
+func isDeviceInSCSIBus(deviceSymlink string) bool {
+	_, deviceSymlinkFileName := path.Split(deviceSymlink)
+	if strings.HasPrefix(deviceSymlinkFileName, symlinkPrefixForAttachedSCSIBus) {
+		return true
+	}
+
+	return false
+}
+
+func getDeviceBySymlink(deviceSymlink string) (string, error) {
+	// Eval any symlinks and make sure it points to a device.
+	realDevicePath, err := filepath.EvalSymlinks(deviceSymlink)
+	if err != nil {
+		return "", err
+	}
+
+	device, err := os.Stat(realDevicePath)
+	if err != nil {
+		return "", err
+	}
+
+	dm := device.Mode()
+
+	if dm&os.ModeDevice == 0 {
+		klog.Warningf("%s is not a block device", deviceSymlink)
+		return "", fmt.Errorf("%s is not a block device", deviceSymlink)
+	}
+
+	return device.Name(), nil
+}
+
+func getDeviceSCSISerial(device string) (string, error) {
+	udevCmd := fmt.Sprintf("udevadm info --query=all --name=%v | grep ID_SCSI_SERIAL", device)
+
+	idSerialLine, err := exec.Command("/bin/sh", "-c", udevCmd).CombinedOutput()
+	if err != nil {
+		// the exit status of grep is 0 if selected lines are found and 1 otherwise.
+		// But the exit status is 2 if an error occurred.
+		// see https://linux.die.net/man/1/grep
+		// so if the exit status is 1 and output is null, we should return no error.
+		exitErr, ok := err.(*exec.ExitError)
+		if ok && exitErr.ProcessState.ExitCode() == 1 && len(idSerialLine) == 0 {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("failed to get device %s ID_SCSI_SERIAL from udevadm, output %v, error %v", device, string(idSerialLine), err)
+	}
+
+	idSerial := strings.Split(strings.TrimSpace(string(idSerialLine)), "=")
+	if len(idSerial) != 2 {
+		return "", nil
+	}
+
+	return idSerial[1], nil
 }
