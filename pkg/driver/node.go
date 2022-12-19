@@ -68,7 +68,7 @@ type nodeServer struct {
 func newNodeServer(config *DriverConfig) *nodeServer {
 	server := &nodeServer{
 		config:                       config,
-		deviceSerialCache:            NewDeviceSerialCache(),
+		deviceSerialCache:            NewDeviceSerialCache(devDiskIDPath),
 		GetDeviceByDiskSerialFuncMap: make(map[models.Bus]GetDeviceByDiskSerialFunc),
 	}
 

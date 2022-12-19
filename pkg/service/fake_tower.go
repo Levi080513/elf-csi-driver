@@ -94,7 +94,7 @@ func (ts *fakeTowerService) GetVMVolumesByID(volumeIDs []string) ([]*models.VMVo
 	return vmVolumes, nil
 }
 
-func (ts *fakeTowerService) AddVMDisks(vmName string, volumeIDs []string) (*models.Task, error) {
+func (ts *fakeTowerService) AddVMDisks(vmName string, volumeIDs []string, bus models.Bus) (*models.Task, error) {
 	for _, volumeID := range volumeIDs {
 		ts.publish[volumeID] = vmName
 		ts.volumes[volumeID].Mounting = pointy.Bool(true)

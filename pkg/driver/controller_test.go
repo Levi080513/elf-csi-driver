@@ -4,9 +4,11 @@
 package driver
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"k8s.io/klog"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/mock/gomock"
@@ -39,6 +41,7 @@ var _ = Describe("CSI Driver Controller Test", func() {
 		mockTowerService *mock_services.MockTowerService
 		config           *DriverConfig
 		vm               *models.VM
+		logBuffer        *bytes.Buffer
 	)
 
 	vm = testutil.NewVM()
@@ -74,7 +77,7 @@ var _ = Describe("CSI Driver Controller Test", func() {
 		mockTowerService = mock_services.NewMockTowerService(mockCtrl)
 		config.TowerClient = mockTowerService
 		driver = newControllerServer(config)
-
+		klog.SetOutput(logBuffer)
 	})
 
 	AfterSuite(func() {
@@ -179,7 +182,7 @@ var _ = Describe("CSI Driver Controller Test", func() {
 			defer func() {
 				_ = driver.keyMutex.UnlockKey(*vm.Name)
 			}()
-			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return(nil, nil)
+			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return(nil, nil).AnyTimes()
 
 			_, err := driver.ControllerPublishVolume(ctx, controllerPublishVolumeRequest)
 			Expect(err).NotTo(BeNil())
@@ -194,10 +197,11 @@ var _ = Describe("CSI Driver Controller Test", func() {
 			volume := testutil.NewVolume()
 			controllerPublishVolumeRequest := testutil.NewControllerPublishVolumeRequest(*volume.ID, *vm.ID, false)
 
-			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return([]*models.VMDisk{{}}, nil)
+			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return([]*models.VMDisk{{}}, nil).AnyTimes()
 
 			_, err := driver.ControllerPublishVolume(ctx, controllerPublishVolumeRequest)
 			Expect(err).To(BeNil())
+			Expect(logBuffer.String()).Should(ContainSubstring("already published in VM"))
 		})
 
 		It("it should remove volume in attachVolumeList when volume has published to VM", func() {
@@ -205,7 +209,7 @@ var _ = Describe("CSI Driver Controller Test", func() {
 			controllerPublishVolumeRequest := testutil.NewControllerPublishVolumeRequest(*volume.ID, *vm.ID, false)
 
 			driver.addVolumeToVolumesToBeAttached(*volume.ID, *vm.Name)
-			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return([]*models.VMDisk{{}}, nil)
+			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return([]*models.VMDisk{{}}, nil).AnyTimes()
 
 			_, err := driver.ControllerPublishVolume(ctx, controllerPublishVolumeRequest)
 			Expect(err).To(BeNil())
@@ -228,7 +232,7 @@ var _ = Describe("CSI Driver Controller Test", func() {
 			volume := testutil.NewVolume()
 			controllerPublishVolumeRequest := testutil.NewControllerPublishVolumeRequest(*volume.ID, *vm.ID, false)
 
-			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return(nil, nil)
+			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return(nil, nil).AnyTimes()
 			mockTowerService.EXPECT().GetVM(*vm.Name).Return(nil, service.ErrVMNotFound)
 			_, err := driver.ControllerPublishVolume(ctx, controllerPublishVolumeRequest)
 			Expect(err.Error()).Should(ContainSubstring(fmt.Sprintf(VMNotFoundInTowerErrorMessage, *vm.Name)))
@@ -238,7 +242,7 @@ var _ = Describe("CSI Driver Controller Test", func() {
 			volume := testutil.NewVolume()
 			controllerPublishVolumeRequest := testutil.NewControllerPublishVolumeRequest(*volume.ID, *vm.ID, false)
 
-			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return(nil, nil)
+			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return(nil, nil).AnyTimes()
 			mockTowerService.EXPECT().GetVM(*vm.Name).Return(vm, nil)
 			mockTowerService.EXPECT().GetVMVolumesByID([]string{*volume.ID}).Return(nil, nil)
 
@@ -258,6 +262,7 @@ var _ = Describe("CSI Driver Controller Test", func() {
 
 			_, err := driver.ControllerPublishVolume(ctx, controllerPublishVolumeRequest)
 			Expect(err.Error()).Should(ContainSubstring("VM Disk is not found"))
+			Expect(logBuffer.String()).Should(ContainSubstring("still attached to another vm"))
 		})
 
 		It("it should return nil when volume is sharing and mounted on other VM", func() {
@@ -272,11 +277,12 @@ var _ = Describe("CSI Driver Controller Test", func() {
 			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return(nil, nil).AnyTimes()
 			mockTowerService.EXPECT().GetVM(*vm.Name).Return(vm, nil)
 			mockTowerService.EXPECT().GetVMVolumesByID([]string{*volume.ID}).Return([]*models.VMVolume{volume}, nil)
-			mockTowerService.EXPECT().AddVMDisks(*vm.Name, []string{*volume.ID}).Return(addVMDiskTask, nil)
+			mockTowerService.EXPECT().AddVMDisks(*vm.Name, []string{*volume.ID}, models.BusSCSI).Return(addVMDiskTask, nil)
 			mockTowerService.EXPECT().GetTask(*addVMDiskTask.ID).Return(addVMDiskTask, nil)
 
 			_, err := driver.ControllerPublishVolume(ctx, controllerPublishVolumeRequest)
 			Expect(err).To(BeNil())
+			Expect(logBuffer.String()).Should(ContainSubstring("was already attached"))
 		})
 
 		It("it should return nil when volume is not sharing and has not mounted on other VM", func() {
@@ -290,14 +296,52 @@ var _ = Describe("CSI Driver Controller Test", func() {
 			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return(nil, nil).AnyTimes()
 			mockTowerService.EXPECT().GetVM(*vm.Name).Return(vm, nil)
 			mockTowerService.EXPECT().GetVMVolumesByID([]string{*volume.ID}).Return([]*models.VMVolume{volume}, nil)
-			mockTowerService.EXPECT().AddVMDisks(*vm.Name, []string{*volume.ID}).Return(addVMDiskTask, nil)
+			mockTowerService.EXPECT().AddVMDisks(*vm.Name, []string{*volume.ID}, models.BusSCSI).Return(addVMDiskTask, nil)
 			mockTowerService.EXPECT().GetTask(*addVMDiskTask.ID).Return(addVMDiskTask, nil)
 
 			_, err := driver.ControllerPublishVolume(ctx, controllerPublishVolumeRequest)
 			Expect(err).To(BeNil())
 		})
 
-		It("it should return nil when batch process volume", func() {
+		It("it should mount to VM SCSI Bus when VM VIRTIO Bus is full mounted", func() {
+			volume := testutil.NewVolume()
+			volume.Sharing = pointy.Bool(false)
+			addVMDiskTask := testutil.NewTask()
+			taskStatusSuccess := models.TaskStatusSUCCESSED
+			addVMDiskTask.Status = &taskStatusSuccess
+			controllerPublishVolumeRequest := testutil.NewControllerPublishVolumeRequest(*volume.ID, *vm.ID, false)
+
+			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return(nil, nil)
+			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{}).Return(testutil.NewVMDisks(models.BusVIRTIO, 32), nil)
+			mockTowerService.EXPECT().GetVM(*vm.Name).Return(vm, nil)
+			mockTowerService.EXPECT().GetVMVolumesByID([]string{*volume.ID}).Return([]*models.VMVolume{volume}, nil)
+			mockTowerService.EXPECT().AddVMDisks(*vm.Name, []string{*volume.ID}, models.BusSCSI).Return(addVMDiskTask, nil)
+			mockTowerService.EXPECT().GetTask(*addVMDiskTask.ID).Return(addVMDiskTask, nil)
+
+			_, err := driver.ControllerPublishVolume(ctx, controllerPublishVolumeRequest)
+			Expect(err).To(BeNil())
+		})
+
+		It("it should return failed when all VM Bus is full mounted", func() {
+			volume := testutil.NewVolume()
+			volume.Sharing = pointy.Bool(false)
+			addVMDiskTask := testutil.NewTask()
+			taskStatusSuccess := models.TaskStatusSUCCESSED
+			addVMDiskTask.Status = &taskStatusSuccess
+			controllerPublishVolumeRequest := testutil.NewControllerPublishVolumeRequest(*volume.ID, *vm.ID, false)
+			vmDisks := append(testutil.NewVMDisks(models.BusVIRTIO, 32), testutil.NewVMDisks(models.BusSCSI, 32)...)
+
+			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return(nil, nil)
+			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{}).Return(vmDisks, nil)
+			mockTowerService.EXPECT().GetVM(*vm.Name).Return(vm, nil)
+			mockTowerService.EXPECT().GetVMVolumesByID([]string{*volume.ID}).Return([]*models.VMVolume{volume}, nil)
+
+			_, err := driver.ControllerPublishVolume(ctx, controllerPublishVolumeRequest)
+			Expect(err).ShouldNot(BeNil())
+			Expect(err.Error()).Should(ContainSubstring("all VM Buses are full"))
+		})
+
+		It("it should return success when batch process volume", func() {
 			volume1 := testutil.NewVolume()
 			volume1.Sharing = pointy.Bool(false)
 			volume2 := testutil.NewVolume()
@@ -313,7 +357,7 @@ var _ = Describe("CSI Driver Controller Test", func() {
 			mockTowerService.EXPECT().GetVMDisks(*vm.Name, gomock.Any()).Return(nil, nil).AnyTimes()
 			mockTowerService.EXPECT().GetVM(*vm.Name).Return(vm, nil)
 			mockTowerService.EXPECT().GetVMVolumesByID([]string{*volume1.ID, *volume2.ID}).Return([]*models.VMVolume{volume1, volume2}, nil)
-			mockTowerService.EXPECT().AddVMDisks(*vm.Name, []string{*volume1.ID, *volume2.ID}).Return(addVMDiskTask, nil)
+			mockTowerService.EXPECT().AddVMDisks(*vm.Name, []string{*volume1.ID, *volume2.ID}, models.BusSCSI).Return(addVMDiskTask, nil)
 			mockTowerService.EXPECT().GetTask(*addVMDiskTask.ID).Return(addVMDiskTask, nil)
 
 			driver.keyMutex.LockKey(*vm.Name)

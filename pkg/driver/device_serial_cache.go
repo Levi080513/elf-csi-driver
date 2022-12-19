@@ -36,13 +36,20 @@ type DeviceSerialCache struct {
 	// serialPrefixToSCSISerialPrefixCacheMap is the map of serial prefix to scsi serial prefix in this VM.
 	serialPrefixToSCSISerialPrefixCacheMap map[string]string
 
+	// device symlink path for os.
+	deviceSymlinkPath string
+
 	rLock sync.RWMutex
 }
 
-func NewDeviceSerialCache() *DeviceSerialCache {
+func NewDeviceSerialCache(deviceSymlinkPath string) *DeviceSerialCache {
+	if deviceSymlinkPath == "" {
+		deviceSymlinkPath = devDiskIDPath
+	}
 	return &DeviceSerialCache{
 		serialPrefixToDeviceCacheMap:           make(map[string]string),
 		serialPrefixToSCSISerialPrefixCacheMap: make(map[string]string),
+		deviceSymlinkPath:                      deviceSymlinkPath,
 	}
 }
 
@@ -98,7 +105,7 @@ func (n *DeviceSerialCache) ListAndWatchVMDevice(stopCh <-chan struct{}) error {
 			w.Close()
 		}()
 
-		err = w.Add(devDiskIDPath)
+		err = w.Add(n.deviceSymlinkPath)
 		if err != nil {
 			return err
 		}
@@ -112,13 +119,13 @@ func (n *DeviceSerialCache) ListAndWatchVMDevice(stopCh <-chan struct{}) error {
 
 // listDeviceAndStoreSerialCache lists all symlinks in /dev/disk/by-id and store serial cache.
 func (n *DeviceSerialCache) listDeviceAndStoreSerialCache() error {
-	devs, err := os.ReadDir(devDiskIDPath)
+	devs, err := os.ReadDir(n.deviceSymlinkPath)
 	if err != nil {
 		return err
 	}
 
 	for _, dev := range devs {
-		deviceSymlink := path.Join(devDiskIDPath, dev.Name())
+		deviceSymlink := path.Join(n.deviceSymlinkPath, dev.Name())
 		if !n.isDeviceSymlinkShouldBeProcess(deviceSymlink) {
 			continue
 		}
@@ -138,7 +145,7 @@ func (n *DeviceSerialCache) processDeviceEvent(eventChan <-chan fsnotify.Event) 
 	for {
 		event, ok := <-eventChan
 		if !ok {
-			klog.Warningf("event channel for device path %s is close", devDiskIDPath)
+			klog.Warningf("event channel for device path %s is close", n.deviceSymlinkPath)
 			return nil
 		}
 

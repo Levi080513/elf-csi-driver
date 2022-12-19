@@ -50,18 +50,18 @@ func (mr *MockTowerServiceMockRecorder) AddLabelsToVolume(volumeID, labels inter
 }
 
 // AddVMDisks mocks base method.
-func (m *MockTowerService) AddVMDisks(vmName string, volumeIDs []string) (*models.Task, error) {
+func (m *MockTowerService) AddVMDisks(vmName string, volumeIDs []string, mountBus models.Bus) (*models.Task, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AddVMDisks", vmName, volumeIDs)
+	ret := m.ctrl.Call(m, "AddVMDisks", vmName, volumeIDs, mountBus)
 	ret0, _ := ret[0].(*models.Task)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // AddVMDisks indicates an expected call of AddVMDisks.
-func (mr *MockTowerServiceMockRecorder) AddVMDisks(vmName, volumeIDs interface{}) *gomock.Call {
+func (mr *MockTowerServiceMockRecorder) AddVMDisks(vmName, volumeIDs, mountBus interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddVMDisks", reflect.TypeOf((*MockTowerService)(nil).AddVMDisks), vmName, volumeIDs)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddVMDisks", reflect.TypeOf((*MockTowerService)(nil).AddVMDisks), vmName, volumeIDs, mountBus)
 }
 
 // CreateLabel mocks base method.
@@ -230,16 +230,16 @@ func (mr *MockTowerServiceMockRecorder) GetVMVolumesByID(volumeIDs interface{}) 
 }
 
 // RemoveVMDisks mocks base method.
-func (m *MockTowerService) RemoveVMDisks(vmName string, volumeIDs []string) (*models.Task, error) {
+func (m *MockTowerService) RemoveVMDisks(vmName string, diskIDs []string) (*models.Task, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RemoveVMDisks", vmName, volumeIDs)
+	ret := m.ctrl.Call(m, "RemoveVMDisks", vmName, diskIDs)
 	ret0, _ := ret[0].(*models.Task)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // RemoveVMDisks indicates an expected call of RemoveVMDisks.
-func (mr *MockTowerServiceMockRecorder) RemoveVMDisks(vmName, volumeIDs interface{}) *gomock.Call {
+func (mr *MockTowerServiceMockRecorder) RemoveVMDisks(vmName, diskIDs interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveVMDisks", reflect.TypeOf((*MockTowerService)(nil).RemoveVMDisks), vmName, volumeIDs)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveVMDisks", reflect.TypeOf((*MockTowerService)(nil).RemoveVMDisks), vmName, diskIDs)
 }

@@ -8,6 +8,19 @@ import (
 	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
 )
 
+func NewVMDisks(bus models.Bus, number int) []*models.VMDisk {
+	vmdisks := make([]*models.VMDisk, number)
+	for i := 0; i < number; i++ {
+		vmDiskId := uuid.New().String()
+		vmdisks[i] = &models.VMDisk{
+			ID:  &vmDiskId,
+			Bus: &bus,
+		}
+	}
+
+	return vmdisks
+}
+
 func NewVMDisk() *models.VMDisk {
 	vmDiskId := uuid.New().String()
 
