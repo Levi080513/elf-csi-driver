@@ -60,7 +60,7 @@ type GetDeviceByDiskSerialFunc func(serial string) (string, bool)
 type nodeServer struct {
 	config *DriverConfig
 
-	deviceSerialCache *DeviceSerialCache
+	deviceSerialCache *deviceSerialCache
 
 	GetDeviceByDiskSerialFuncMap map[models.Bus]GetDeviceByDiskSerialFunc
 }
@@ -68,7 +68,7 @@ type nodeServer struct {
 func newNodeServer(config *DriverConfig) *nodeServer {
 	server := &nodeServer{
 		config:                       config,
-		deviceSerialCache:            NewDeviceSerialCache(devDiskIDPath),
+		deviceSerialCache:            NewDeviceSerialCache(config),
 		GetDeviceByDiskSerialFuncMap: make(map[models.Bus]GetDeviceByDiskSerialFunc),
 	}
 
@@ -76,8 +76,8 @@ func newNodeServer(config *DriverConfig) *nodeServer {
 	// so use GetDeviceByIDSerial to get device.
 	// device ID_SCSI_SERIAL is disk'serial prefix when volume attach to SCSI Bus,
 	// so use GetDeviceByIDSCSISerial to get device.
-	server.GetDeviceByDiskSerialFuncMap[models.BusVIRTIO] = server.deviceSerialCache.getDeviceByIDSerial
-	server.GetDeviceByDiskSerialFuncMap[models.BusSCSI] = server.deviceSerialCache.getDeviceByIDSCSISerial
+	server.GetDeviceByDiskSerialFuncMap[models.BusVIRTIO] = server.deviceSerialCache.GetDeviceByIDSerial
+	server.GetDeviceByDiskSerialFuncMap[models.BusSCSI] = server.deviceSerialCache.GetDeviceByIDSCSISerial
 
 	return server
 }

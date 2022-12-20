@@ -5,13 +5,9 @@ package utils
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 
-	"k8s.io/klog"
 	kexec "k8s.io/utils/exec"
 	kmount "k8s.io/utils/mount"
 )
@@ -30,10 +26,6 @@ type Mount interface {
 	GetMountPoint(path string) (*kmount.MountPoint, error)
 	// get fs / device mount ref
 	GetMountRef(path string) (*kmount.MountInfo, error)
-
-	PathExists(filename string) (bool, error)
-
-	GetDeviceSerial(device string) (string, error)
 }
 
 type mount struct {
@@ -174,28 +166,6 @@ func (m *mount) GetMountPoint(path string) (*kmount.MountPoint, error) {
 	return nil, nil
 }
 
-func (m *mount) PathExists(path string) (bool, error) {
-	return kmount.PathExists(path)
-}
-
-func (m *mount) GetDeviceSerial(device string) (string, error) {
-	udevCmd := fmt.Sprintf("udevadm info --query=all --name=%v | grep ID_SERIAL", device)
-
-	idSerialLine, err := exec.Command("/bin/sh", "-c", udevCmd).CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("failed to get ID_SERIAL from udevadm, %v", string(idSerialLine))
-	}
-
-	idSerial := strings.Split(strings.TrimSpace(string(idSerialLine)), "=")
-	klog.Infof("ID_SERIAL parsed from udevadm is %v", idSerial)
-
-	if len(idSerial) != 2 {
-		return "", nil
-	}
-
-	return idSerial[1], nil
-}
-
 type fakeMount struct {
 	kmount.Interface
 	deviceFSTypeMap map[string]string
@@ -265,16 +235,6 @@ func (m *fakeMount) GetMountRef(path string) (*kmount.MountInfo, error) {
 	return mi, nil
 }
 
-func (m *fakeMount) PathExists(filename string) (bool, error) {
-	if _, err := os.Stat(filename); os.IsNotExist(err) {
-		return false, nil
-	} else if err != nil {
-		return false, err
-	}
-
-	return true, nil
-}
-
 func (m *fakeMount) GetDiskFormat(disk string) (string, error) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
@@ -285,8 +245,4 @@ func (m *fakeMount) GetDiskFormat(disk string) (string, error) {
 	}
 
 	return diskFSType, nil
-}
-
-func (m *fakeMount) GetDeviceSerial(device string) (string, error) {
-	return "testSerial", nil
 }

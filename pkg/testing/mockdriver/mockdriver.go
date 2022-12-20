@@ -5,6 +5,7 @@ package mockdriver
 
 import (
 	"context"
+	"github.com/smartxworks/elf-csi-driver/pkg/service"
 	"os"
 
 	snapshotfake "github.com/kubernetes-csi/external-snapshotter/client/v4/clientset/versioned/fake"
@@ -13,17 +14,18 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/smartxworks/elf-csi-driver/pkg/driver"
-	"github.com/smartxworks/elf-csi-driver/pkg/service"
 	"github.com/smartxworks/elf-csi-driver/pkg/testing/constant"
 	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 )
 
 const (
-	livenessPort = 2020
-	nodeIP       = "127.0.0.1"
-	nodeName     = "test-node"
-	nodeMapName  = "node-map"
-	namespace    = "default"
+	livenessPort         = 2020
+	nodeIP               = "127.0.0.1"
+	nodeName             = "test-node"
+	nodeMapName          = "node-map"
+	namespace            = "default"
+	testDeviceSymlinkDir = "/tmp/csi/mock/disk"
+	testDeviceDir        = "/tmp/csi/mock/device"
 )
 
 func RunMockDriver(kubeClient kubernetes.Interface, stopCh chan struct{}) error {
@@ -45,6 +47,15 @@ func RunMockDriver(kubeClient kubernetes.Interface, stopCh chan struct{}) error 
 		return err
 	}
 
+	err = os.MkdirAll(testDeviceSymlinkDir, 0755)
+	if err != nil {
+		return err
+	}
+	err = os.MkdirAll(testDeviceDir, 0755)
+	if err != nil {
+		return err
+	}
+
 	drv, err := driver.NewDriver(&driver.DriverConfig{
 		NodeID:         nodeName,
 		DriverName:     constant.DriverName,
@@ -55,9 +66,10 @@ func RunMockDriver(kubeClient kubernetes.Interface, stopCh chan struct{}) error 
 		LivenessPort:   livenessPort,
 		Mount:          utils.NewFakeMount(),
 		Resizer:        utils.NewFakeResizer(),
+		OsUtil:         utils.NewFakeOsUtil(),
 		KubeClient:     kubeClient,
 		SnapshotClient: snapshotClient,
-		TowerClient:    service.NewFakeTowerService(),
+		TowerClient:    service.NewFakeTowerService(testDeviceSymlinkDir, testDeviceDir),
 	})
 	if err != nil {
 		return err

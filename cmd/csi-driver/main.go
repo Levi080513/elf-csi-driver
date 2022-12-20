@@ -196,6 +196,7 @@ func initNodeConfig(config *driver.DriverConfig) {
 	config.LivenessPort = *livenessPort
 	config.Mount = utils.NewMount()
 	config.Resizer = utils.NewResizer()
+	config.OsUtil = utils.NewOsUtil()
 
 	nodeID, ok := os.LookupEnv("NODE_NAME")
 	if !ok {

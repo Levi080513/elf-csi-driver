@@ -14,13 +14,15 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog"
+
+	"github.com/smartxworks/elf-csi-driver/pkg/utils"
 )
 
 const (
 	// symlinks in the /dev/disk/by-id folder are created by udev rules (and are specific to OS'es using udev),
 	// the rule for the symlinks is:
 	// /dev/disk/by-id/{BUS}-{ID_SERIAL}
-	devDiskIDPath = "/dev/disk/by-id"
+	DevDiskIDPath = "/dev/disk/by-id"
 
 	// symlinkPrefixForAttachedVIRTIOBus is the prefix of symlink name for device which attach to VIRTIO Bus.
 	symlinkPrefixForAttachedVIRTIOBus = "virtio-"
@@ -28,7 +30,7 @@ const (
 	symlinkPrefixForAttachedSCSIBus = "scsi-"
 )
 
-type DeviceSerialCache struct {
+type deviceSerialCache struct {
 
 	// serialToDeviceCacheMap is the map of serial prefix to device in this VM.
 	serialPrefixToDeviceCacheMap map[string]string
@@ -36,25 +38,22 @@ type DeviceSerialCache struct {
 	// serialPrefixToSCSISerialPrefixCacheMap is the map of serial prefix to scsi serial prefix in this VM.
 	serialPrefixToSCSISerialPrefixCacheMap map[string]string
 
-	// device symlink path for os.
-	deviceSymlinkPath string
-
 	rLock sync.RWMutex
+
+	osUtil utils.OsUtil
 }
 
-func NewDeviceSerialCache(deviceSymlinkPath string) *DeviceSerialCache {
-	if deviceSymlinkPath == "" {
-		deviceSymlinkPath = devDiskIDPath
-	}
-	return &DeviceSerialCache{
+func NewDeviceSerialCache(config *DriverConfig) *deviceSerialCache {
+	return &deviceSerialCache{
 		serialPrefixToDeviceCacheMap:           make(map[string]string),
 		serialPrefixToSCSISerialPrefixCacheMap: make(map[string]string),
-		deviceSymlinkPath:                      deviceSymlinkPath,
+
+		osUtil: config.OsUtil,
 	}
 }
 
 // resyncCache call listDeviceAndStoreSerialCache to resync cache.
-func (n *DeviceSerialCache) resyncCache() error {
+func (n *deviceSerialCache) resyncCache() error {
 	err := n.listDeviceAndStoreSerialCache()
 	if err != nil {
 		return err
@@ -66,7 +65,7 @@ func (n *DeviceSerialCache) resyncCache() error {
 // Run repeatedly uses the cache's ListAndWatchVMDevice to fetch all the
 // devices and subsequent deltas.
 // Run will exit when stopCh is closed.
-func (n *DeviceSerialCache) Run(stopCh <-chan struct{}) error {
+func (n *deviceSerialCache) Run(stopCh <-chan struct{}) error {
 	go wait.Until(func() {
 		if err := n.ListAndWatchVMDevice(stopCh); err != nil {
 			klog.Errorf("failed to ListAndWatchVMDevice, error %v", err.Error())
@@ -79,7 +78,7 @@ func (n *DeviceSerialCache) Run(stopCh <-chan struct{}) error {
 // ListAndWatchVMDevice first lists all symlinks in /dev/disk/by-id and store serial cache,
 // and then use the fsnotify watcher to observe /dev/disk/by-id folder changes.
 // It returns error if ListAndWatchVMDevice didn't even try to initialize watch.
-func (n *DeviceSerialCache) ListAndWatchVMDevice(stopCh <-chan struct{}) error {
+func (n *deviceSerialCache) ListAndWatchVMDevice(stopCh <-chan struct{}) error {
 	var err error
 
 	err = n.listDeviceAndStoreSerialCache()
@@ -105,7 +104,7 @@ func (n *DeviceSerialCache) ListAndWatchVMDevice(stopCh <-chan struct{}) error {
 			w.Close()
 		}()
 
-		err = w.Add(n.deviceSymlinkPath)
+		err = w.Add(DevDiskIDPath)
 		if err != nil {
 			return err
 		}
@@ -118,14 +117,14 @@ func (n *DeviceSerialCache) ListAndWatchVMDevice(stopCh <-chan struct{}) error {
 }
 
 // listDeviceAndStoreSerialCache lists all symlinks in /dev/disk/by-id and store serial cache.
-func (n *DeviceSerialCache) listDeviceAndStoreSerialCache() error {
-	devs, err := os.ReadDir(n.deviceSymlinkPath)
+func (n *deviceSerialCache) listDeviceAndStoreSerialCache() error {
+	devs, err := os.ReadDir(DevDiskIDPath)
 	if err != nil {
 		return err
 	}
 
 	for _, dev := range devs {
-		deviceSymlink := path.Join(n.deviceSymlinkPath, dev.Name())
+		deviceSymlink := path.Join(DevDiskIDPath, dev.Name())
 		if !n.isDeviceSymlinkShouldBeProcess(deviceSymlink) {
 			continue
 		}
@@ -141,11 +140,11 @@ func (n *DeviceSerialCache) listDeviceAndStoreSerialCache() error {
 }
 
 // processDeviceEvent process event for /dev/disk/by-id folder changes.
-func (n *DeviceSerialCache) processDeviceEvent(eventChan <-chan fsnotify.Event) error {
+func (n *deviceSerialCache) processDeviceEvent(eventChan <-chan fsnotify.Event) error {
 	for {
 		event, ok := <-eventChan
 		if !ok {
-			klog.Warningf("event channel for device path %s is close", n.deviceSymlinkPath)
+			klog.Warningf("event channel for device path %s is close", DevDiskIDPath)
 			return nil
 		}
 
@@ -171,11 +170,11 @@ func (n *DeviceSerialCache) processDeviceEvent(eventChan <-chan fsnotify.Event) 
 	}
 }
 
-func (n *DeviceSerialCache) AddDeviceToSerialCache(deviceSymlink string) error {
+func (n *deviceSerialCache) AddDeviceToSerialCache(deviceSymlink string) error {
 	n.rLock.Lock()
 	defer n.rLock.Unlock()
 
-	device, err := getDeviceBySymlink(deviceSymlink)
+	device, err := n.osUtil.GetDeviceBySymlink(deviceSymlink)
 	if err != nil {
 		return err
 	}
@@ -189,7 +188,7 @@ func (n *DeviceSerialCache) AddDeviceToSerialCache(deviceSymlink string) error {
 		serial := strings.Split(deviceSymlink, symlinkPrefixForAttachedSCSIBus)[1]
 		n.serialPrefixToDeviceCacheMap[serial] = device
 
-		scsiSerial, err := getDeviceSCSISerial(device)
+		scsiSerial, err := n.osUtil.GetDeviceSCSISerial(device)
 		if err != nil {
 			return err
 		}
@@ -200,7 +199,7 @@ func (n *DeviceSerialCache) AddDeviceToSerialCache(deviceSymlink string) error {
 	return nil
 }
 
-func (n *DeviceSerialCache) RemoveDeviceFromSerialCache(deviceSymlink string) error {
+func (n *deviceSerialCache) RemoveDeviceFromSerialCache(deviceSymlink string) error {
 	n.rLock.Lock()
 	defer n.rLock.Unlock()
 
@@ -218,7 +217,7 @@ func (n *DeviceSerialCache) RemoveDeviceFromSerialCache(deviceSymlink string) er
 	return nil
 }
 
-func (n *DeviceSerialCache) getDeviceByIDSerial(serial string) (string, bool) {
+func (n *deviceSerialCache) GetDeviceByIDSerial(serial string) (string, bool) {
 	n.rLock.RLock()
 	defer n.rLock.RUnlock()
 
@@ -232,7 +231,7 @@ func (n *DeviceSerialCache) getDeviceByIDSerial(serial string) (string, bool) {
 	return "", false
 }
 
-func (n *DeviceSerialCache) getDeviceByIDSCSISerial(scsiSerial string) (string, bool) {
+func (n *deviceSerialCache) GetDeviceByIDSCSISerial(scsiSerial string) (string, bool) {
 	n.rLock.RLock()
 	defer n.rLock.RUnlock()
 
@@ -257,7 +256,7 @@ func (n *DeviceSerialCache) getDeviceByIDSCSISerial(scsiSerial string) (string, 
 }
 
 // isDeviceSymlinkShouldBeProcess return true when the device associated with the symlink is attached by ELF CSI.
-func (n *DeviceSerialCache) isDeviceSymlinkShouldBeProcess(deviceSymlink string) bool {
+func (n *deviceSerialCache) isDeviceSymlinkShouldBeProcess(deviceSymlink string) bool {
 	// ELF CSI only support attach to VIRTIO Bus and SCSI Bus,
 	// If the device associated with the symlink is attached to the VIRTIO bus or SCSI bus,
 	// return true.

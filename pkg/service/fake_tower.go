@@ -6,19 +6,25 @@ import (
 	"github.com/google/uuid"
 	"github.com/openlyinc/pointy"
 	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
+	testutil "github.com/smartxworks/elf-csi-driver/pkg/testing/utils"
 )
 
 type fakeTowerService struct {
 	volumes map[string]*models.VMVolume
 	publish map[string]string
 	vms     map[string]*models.VM
+
+	deviceSymlinkDir string
+	deviceDir        string
 }
 
-func NewFakeTowerService() TowerService {
+func NewFakeTowerService(deviceSymlinkDir, deviceDir string) TowerService {
 	return &fakeTowerService{
-		volumes: make(map[string]*models.VMVolume),
-		publish: make(map[string]string),
-		vms:     make(map[string]*models.VM),
+		volumes:          make(map[string]*models.VMVolume),
+		publish:          make(map[string]string),
+		vms:              make(map[string]*models.VM),
+		deviceSymlinkDir: deviceSymlinkDir,
+		deviceDir:        deviceDir,
 	}
 }
 
@@ -34,6 +40,7 @@ func (ts *fakeTowerService) CreateVMVolume(elfClusterID string, name string, sto
 		Mounting:         pointy.Bool(false),
 		VMDisks:          []*models.NestedVMDisk{},
 		Lun:              &models.NestedIscsiLun{ID: pointy.String("lunID")},
+		LocalID:          pointy.String(volumeId),
 	}
 
 	return &models.Task{ID: pointy.String("1")}, nil
@@ -101,6 +108,10 @@ func (ts *fakeTowerService) AddVMDisks(vmName string, volumeIDs []string, bus mo
 		nestID := uuid.New().String()
 		ts.volumes[volumeID].VMDisks = []*models.NestedVMDisk{{ID: &nestID}}
 		ts.vms[vmName].VMDisks = append(ts.vms[vmName].VMDisks, &models.NestedVMDisk{ID: &nestID})
+		_, err := testutil.CreateDeviceSymlinkForVolumeID(volumeID, ts.deviceDir, ts.deviceSymlinkDir, models.BusVIRTIO)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &models.Task{ID: pointy.String("1")}, nil
@@ -115,6 +126,10 @@ func (ts *fakeTowerService) RemoveVMDisks(vmName string, volumeIDs []string) (*m
 
 		removeNestIDsMap[*ts.volumes[volumeIDs[index]].VMDisks[0].ID] = *ts.volumes[volumeIDs[index]].VMDisks[0].ID
 		ts.volumes[volumeIDs[index]].VMDisks = []*models.NestedVMDisk{}
+		err := testutil.RemoveDeviceSymlinkForVolumeID(volumeIDs[index], ts.deviceDir, ts.deviceSymlinkDir, models.BusVIRTIO)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	vmNestDisks := []*models.NestedVMDisk{}
@@ -134,20 +149,38 @@ func (ts *fakeTowerService) RemoveVMDisks(vmName string, volumeIDs []string) (*m
 func (ts *fakeTowerService) GetVMDisks(vmName string, volumeIDs []string) ([]*models.VMDisk, error) {
 	var vmDisks []*models.VMDisk
 
-	for _, volumeID := range volumeIDs {
-		if _, ok := ts.publish[volumeID]; !ok {
+	for volumeID, vm := range ts.publish {
+		if vm != vmName {
 			continue
 		}
 
-		if ts.publish[volumeID] == vmName {
-			vmDisks = append(vmDisks, &models.VMDisk{
-				ID:     pointy.String(volumeID),
-				Serial: pointy.String("testSerial"),
-			})
+		vmDisks = append(vmDisks, &models.VMDisk{
+			ID:     pointy.String(volumeID),
+			Serial: pointy.String(volumeID),
+			Bus:    models.BusVIRTIO.Pointer(),
+			VMVolume: &models.NestedVMVolume{
+				ID: pointy.String(volumeID),
+			},
+			VM: &models.NestedVM{
+				Name: pointy.String(vmName),
+			},
+		})
+	}
+	if len(volumeIDs) == 0 {
+		return vmDisks, nil
+	}
+
+	var result []*models.VMDisk
+
+	for _, vmDisk := range vmDisks {
+		for _, needVolumeId := range volumeIDs {
+			if *vmDisk.VMVolume.ID == needVolumeId {
+				result = append(result, vmDisk)
+			}
 		}
 	}
 
-	return vmDisks, nil
+	return result, nil
 }
 
 func (ts *fakeTowerService) GetTask(id string) (*models.Task, error) {

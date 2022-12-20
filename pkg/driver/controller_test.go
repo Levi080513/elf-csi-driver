@@ -77,6 +77,7 @@ var _ = Describe("CSI Driver Controller Test", func() {
 		mockTowerService = mock_services.NewMockTowerService(mockCtrl)
 		config.TowerClient = mockTowerService
 		driver = newControllerServer(config)
+		logBuffer = new(bytes.Buffer)
 		klog.SetOutput(logBuffer)
 	})
 
@@ -311,7 +312,7 @@ var _ = Describe("CSI Driver Controller Test", func() {
 			addVMDiskTask.Status = &taskStatusSuccess
 			controllerPublishVolumeRequest := testutil.NewControllerPublishVolumeRequest(*volume.ID, *vm.ID, false)
 
-			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return(nil, nil)
+			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return(nil, nil).AnyTimes()
 			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{}).Return(testutil.NewVMDisks(models.BusVIRTIO, 32), nil)
 			mockTowerService.EXPECT().GetVM(*vm.Name).Return(vm, nil)
 			mockTowerService.EXPECT().GetVMVolumesByID([]string{*volume.ID}).Return([]*models.VMVolume{volume}, nil)
@@ -331,7 +332,7 @@ var _ = Describe("CSI Driver Controller Test", func() {
 			controllerPublishVolumeRequest := testutil.NewControllerPublishVolumeRequest(*volume.ID, *vm.ID, false)
 			vmDisks := append(testutil.NewVMDisks(models.BusVIRTIO, 32), testutil.NewVMDisks(models.BusSCSI, 32)...)
 
-			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return(nil, nil)
+			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return(nil, nil).AnyTimes()
 			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{}).Return(vmDisks, nil)
 			mockTowerService.EXPECT().GetVM(*vm.Name).Return(vm, nil)
 			mockTowerService.EXPECT().GetVMVolumesByID([]string{*volume.ID}).Return([]*models.VMVolume{volume}, nil)
@@ -357,7 +358,7 @@ var _ = Describe("CSI Driver Controller Test", func() {
 			mockTowerService.EXPECT().GetVMDisks(*vm.Name, gomock.Any()).Return(nil, nil).AnyTimes()
 			mockTowerService.EXPECT().GetVM(*vm.Name).Return(vm, nil)
 			mockTowerService.EXPECT().GetVMVolumesByID([]string{*volume1.ID, *volume2.ID}).Return([]*models.VMVolume{volume1, volume2}, nil)
-			mockTowerService.EXPECT().AddVMDisks(*vm.Name, []string{*volume1.ID, *volume2.ID}, models.BusSCSI).Return(addVMDiskTask, nil)
+			mockTowerService.EXPECT().AddVMDisks(*vm.Name, []string{*volume1.ID, *volume2.ID}, models.BusVIRTIO).Return(addVMDiskTask, nil)
 			mockTowerService.EXPECT().GetTask(*addVMDiskTask.ID).Return(addVMDiskTask, nil)
 
 			driver.keyMutex.LockKey(*vm.Name)

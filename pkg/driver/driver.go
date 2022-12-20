@@ -75,13 +75,13 @@ type DriverConfig struct {
 	// csi grpc server listen addr
 	ServerAddr string
 	// node liveness port
-	LivenessPort int
-
+	LivenessPort   int
 	KubeClient     kubernetes.Interface
 	SnapshotClient snapshotclientset.Interface
 	NodeMap        *nodeMap      // iqn node map
 	Mount          utils.Mount   // mount utils
 	Resizer        utils.Resizer // resize utils
+	OsUtil         utils.OsUtil  // os utils
 
 	TowerClient service.TowerService
 }
@@ -103,6 +103,7 @@ func NewDriver(config *DriverConfig) (*Driver, error) {
 	driver.identity = newIdentityServer(driver)
 
 	if config.Role == NODE || config.Role == ALL {
+
 		driver.node = newNodeServer(config)
 
 		driver.nodeLivenessServer = newNodeLivenessServer(config)
