@@ -28,7 +28,7 @@ var _ = Describe("Device Serial Cache Test", func() {
 		stopCh = make(chan struct{}, 1)
 
 		config := &DriverConfig{
-			OsUtil: utils.NewOsUtil(),
+			OsUtil: utils.NewFakeOsUtil(),
 		}
 
 		deviceSerialCacheInstance = NewDeviceSerialCache(config)
@@ -52,7 +52,7 @@ var _ = Describe("Device Serial Cache Test", func() {
 				if len(deviceSerialCacheInstance.serialPrefixToDeviceCacheMap) == 0 {
 					return false
 				}
-				serial := strings.Split(deviceSymlinkPath, symlinkPrefixForAttachedSCSIBus)[1]
+				serial := strings.Split(deviceSymlinkPath, symlinkPrefixForAttachedVIRTIOBus)[1]
 				if _, ok := deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[serial]; !ok {
 					return false
 				}
@@ -73,7 +73,7 @@ var _ = Describe("Device Serial Cache Test", func() {
 				if len(deviceSerialCacheInstance.serialPrefixToDeviceCacheMap) == 0 {
 					return false
 				}
-				serial := strings.Split(deviceSymlinkPath, symlinkPrefixForAttachedSCSIBus)[1]
+				serial := strings.Split(deviceSymlinkPath, symlinkPrefixForAttachedVIRTIOBus)[1]
 				if _, ok := deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[serial]; !ok {
 					return false
 				}

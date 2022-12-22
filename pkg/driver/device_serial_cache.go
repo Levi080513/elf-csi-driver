@@ -148,6 +148,8 @@ func (n *deviceSerialCache) processDeviceEvent(eventChan <-chan fsnotify.Event) 
 			return nil
 		}
 
+		klog.Infof("process event %s", event.String())
+
 		var err error
 		deviceSymlink := event.Name
 
