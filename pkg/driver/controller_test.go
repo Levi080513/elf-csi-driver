@@ -292,7 +292,7 @@ var _ = Describe("CSI Driver Controller Test", func() {
 			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return(nil, nil).AnyTimes()
 			mockTowerService.EXPECT().GetVM(*vm.Name).Return(vm, nil)
 			mockTowerService.EXPECT().GetVMVolumesByID([]string{*volume.ID}).Return([]*models.VMVolume{volume}, nil)
-			mockTowerService.EXPECT().AddVMDisks(*vm.Name, []string{*volume.ID}, models.BusSCSI).Return(addVMDiskTask, nil)
+			mockTowerService.EXPECT().AddVMDisks(*vm.Name, []string{*volume.ID}, models.BusVIRTIO).Return(addVMDiskTask, nil)
 			mockTowerService.EXPECT().GetTask(*addVMDiskTask.ID).Return(addVMDiskTask, nil)
 
 			_, err := driver.ControllerPublishVolume(ctx, controllerPublishVolumeRequest)

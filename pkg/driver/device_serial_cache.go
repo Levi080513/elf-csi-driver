@@ -207,11 +207,15 @@ func (n *deviceSerialCache) RemoveDeviceFromSerialCache(deviceSymlink string) er
 
 	if isDeviceInVIRTIOBus(deviceSymlink) {
 		serialPrefix := strings.Split(deviceSymlink, symlinkPrefixForAttachedVIRTIOBus)[1]
+		fmt.Println(serialPrefix)
+		fmt.Println(n.serialPrefixToDeviceCacheMap)
 		delete(n.serialPrefixToDeviceCacheMap, serialPrefix)
 	}
 
 	if isDeviceInSCSIBus(deviceSymlink) {
 		serialPrefix := strings.Split(deviceSymlink, symlinkPrefixForAttachedSCSIBus)[1]
+		fmt.Println(serialPrefix)
+		fmt.Println(n.serialPrefixToDeviceCacheMap)
 		delete(n.serialPrefixToDeviceCacheMap, serialPrefix)
 		delete(n.serialPrefixToSCSISerialPrefixCacheMap, serialPrefix)
 	}

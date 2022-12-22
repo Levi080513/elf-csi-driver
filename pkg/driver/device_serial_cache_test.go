@@ -62,7 +62,7 @@ var _ = Describe("Device Serial Cache Test", func() {
 					return false
 				}
 				return true
-			}, timeout).Should(BeTrue())
+			}, time.Second, timeout).Should(BeTrue())
 		})
 	})
 
@@ -85,7 +85,7 @@ var _ = Describe("Device Serial Cache Test", func() {
 					return false
 				}
 				return true
-			}, timeout).Should(BeTrue())
+			}, time.Second, timeout).Should(BeTrue())
 
 			err = testutil.RemoveDeviceSymlinkForVolumeID(testVolumeID, "/dev", DevDiskIDPath, models.BusVIRTIO)
 			Expect(err).Should(BeNil())
@@ -96,7 +96,7 @@ var _ = Describe("Device Serial Cache Test", func() {
 					return true
 				}
 				return false
-			}, timeout).Should(BeTrue())
+			}, time.Second, timeout).Should(BeTrue())
 		})
 	})
 
@@ -115,7 +115,7 @@ var _ = Describe("Device Serial Cache Test", func() {
 					return true
 				}
 				return false
-			}, timeout).Should(BeTrue())
+			}, time.Second, timeout).Should(BeTrue())
 		})
 	})
 })
