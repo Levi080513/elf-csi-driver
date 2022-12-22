@@ -19,13 +19,11 @@ import (
 )
 
 const (
-	livenessPort         = 2020
-	nodeIP               = "127.0.0.1"
-	nodeName             = "test-node"
-	nodeMapName          = "node-map"
-	namespace            = "default"
-	testDeviceSymlinkDir = "/tmp/csi/mock/disk"
-	testDeviceDir        = "/tmp/csi/mock/device"
+	livenessPort = 2020
+	nodeIP       = "127.0.0.1"
+	nodeName     = "test-node"
+	nodeMapName  = "node-map"
+	namespace    = "default"
 )
 
 func RunMockDriver(kubeClient kubernetes.Interface, stopCh chan struct{}) error {
@@ -69,7 +67,7 @@ func RunMockDriver(kubeClient kubernetes.Interface, stopCh chan struct{}) error 
 		OsUtil:         utils.NewFakeOsUtil(),
 		KubeClient:     kubeClient,
 		SnapshotClient: snapshotClient,
-		TowerClient:    service.NewFakeTowerService(testDeviceSymlinkDir, testDeviceDir),
+		TowerClient:    service.NewFakeTowerService("/dev/disk/by-id", "/dev"),
 	})
 	if err != nil {
 		return err

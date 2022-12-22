@@ -1,7 +1,6 @@
 package driver
 
 import (
-	"os"
 	"strings"
 	"time"
 
@@ -15,25 +14,17 @@ import (
 )
 
 var (
-	testDeviceSymlinkDir = "/tmp/mock/disk"
-	testDeviceDir        = "/tmp/mock/device"
-
 	timeout = time.Second * 10
 )
 
 var _ = Describe("Device Serial Cache Test", func() {
 	var (
-		err                       error
 		deviceSerialCacheInstance *deviceSerialCache
 		stopCh                    chan struct{}
+		testVolumeID              string
 	)
 
 	BeforeEach(func() {
-		err = os.Mkdir(testDeviceSymlinkDir, 0755)
-		Expect(err).Should(BeNil())
-		err = os.Mkdir(testDeviceDir, 0755)
-		Expect(err).Should(BeNil())
-
 		stopCh = make(chan struct{}, 1)
 
 		config := &DriverConfig{
@@ -42,21 +33,19 @@ var _ = Describe("Device Serial Cache Test", func() {
 
 		deviceSerialCacheInstance = NewDeviceSerialCache(config)
 		deviceSerialCacheInstance.Run(stopCh)
+
+		testVolumeID = uuid.New().String()
 	})
 
 	AfterEach(func() {
-		err = os.RemoveAll(testDeviceSymlinkDir)
-		Expect(err).Should(BeNil())
-		err = os.RemoveAll(testDeviceDir)
-		Expect(err).Should(BeNil())
+		_ = testutil.RemoveDeviceSymlinkForVolumeID(testVolumeID, "/dev", DevDiskIDPath, models.BusVIRTIO)
+
 		close(stopCh)
 	})
 
 	Context("Device Add", func() {
 		It("Test Device Add", func() {
-			testVolumeID := uuid.New().String()
-
-			deviceSymlinkPath, err := testutil.CreateDeviceSymlinkForVolumeID(testVolumeID, testDeviceDir, testDeviceSymlinkDir, models.BusVIRTIO)
+			deviceSymlinkPath, err := testutil.CreateDeviceSymlinkForVolumeID(testVolumeID, "/dev", DevDiskIDPath, models.BusVIRTIO)
 			Expect(err).Should(BeNil())
 
 			Eventually(func() bool {
@@ -77,9 +66,7 @@ var _ = Describe("Device Serial Cache Test", func() {
 
 	Context("Device Remove", func() {
 		It("Test Device Remove", func() {
-			testVolumeID := uuid.New().String()
-
-			deviceSymlinkPath, err := testutil.CreateDeviceSymlinkForVolumeID(testVolumeID, testDeviceDir, testDeviceSymlinkDir, models.BusVIRTIO)
+			deviceSymlinkPath, err := testutil.CreateDeviceSymlinkForVolumeID(testVolumeID, "/dev", DevDiskIDPath, models.BusVIRTIO)
 			Expect(err).Should(BeNil())
 
 			Eventually(func() bool {
@@ -96,7 +83,7 @@ var _ = Describe("Device Serial Cache Test", func() {
 				return true
 			}, timeout).Should(BeTrue())
 
-			err = testutil.RemoveDeviceSymlinkForVolumeID(testVolumeID, testDeviceDir, testDeviceSymlinkDir, models.BusVIRTIO)
+			err = testutil.RemoveDeviceSymlinkForVolumeID(testVolumeID, "/dev", DevDiskIDPath, models.BusVIRTIO)
 			Expect(err).Should(BeNil())
 			Eventually(func() bool {
 				if len(deviceSerialCacheInstance.serialPrefixToDeviceCacheMap) == 0 {
@@ -112,9 +99,7 @@ var _ = Describe("Device Serial Cache Test", func() {
 			// close run
 			stopCh <- struct{}{}
 
-			testVolumeID := uuid.New().String()
-
-			_, err := testutil.CreateDeviceSymlinkForVolumeID(testVolumeID, testDeviceDir, testDeviceSymlinkDir, models.BusVIRTIO)
+			_, err := testutil.CreateDeviceSymlinkForVolumeID(testVolumeID, "/dev", DevDiskIDPath, models.BusVIRTIO)
 			Expect(err).Should(BeNil())
 
 			Eventually(func() bool {
