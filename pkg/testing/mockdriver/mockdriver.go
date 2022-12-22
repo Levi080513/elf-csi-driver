@@ -45,15 +45,6 @@ func RunMockDriver(kubeClient kubernetes.Interface, stopCh chan struct{}) error 
 		return err
 	}
 
-	err = os.MkdirAll(testDeviceSymlinkDir, 0755)
-	if err != nil {
-		return err
-	}
-	err = os.MkdirAll(testDeviceDir, 0755)
-	if err != nil {
-		return err
-	}
-
 	drv, err := driver.NewDriver(&driver.DriverConfig{
 		NodeID:         nodeName,
 		DriverName:     constant.DriverName,
