@@ -7,6 +7,7 @@ import (
 	"github.com/openlyinc/pointy"
 	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
 	testutil "github.com/smartxworks/elf-csi-driver/pkg/testing/utils"
+	"time"
 )
 
 type fakeTowerService struct {
@@ -112,6 +113,9 @@ func (ts *fakeTowerService) AddVMDisks(vmName string, volumeIDs []string, bus mo
 		if err != nil {
 			return nil, err
 		}
+
+		// add time sleep wait for device serial cache get
+		time.Sleep(time.Second * 5)
 	}
 
 	return &models.Task{ID: pointy.String("1")}, nil
@@ -130,6 +134,8 @@ func (ts *fakeTowerService) RemoveVMDisks(vmName string, volumeIDs []string) (*m
 		if err != nil {
 			return nil, err
 		}
+		// add time sleep wait for device serial cache get
+		time.Sleep(time.Second * 5)
 	}
 
 	vmNestDisks := []*models.NestedVMDisk{}
