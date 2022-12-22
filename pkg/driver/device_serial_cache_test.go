@@ -48,17 +48,18 @@ var _ = Describe("Device Serial Cache Test", func() {
 		It("Test Device Add", func() {
 			deviceSymlinkPath, err := testutil.CreateDeviceSymlinkForVolumeID(testVolumeID, "/dev", DevDiskIDPath, models.BusVIRTIO)
 			Expect(err).Should(BeNil())
-
 			Eventually(func() bool {
 				deviceSerialCacheInstance.rLock.Lock()
 				defer deviceSerialCacheInstance.rLock.Unlock()
 				serial := strings.Split(deviceSymlinkPath, symlinkPrefixForAttachedVIRTIOBus)[1]
-				fmt.Println(deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[serial])
 				fmt.Println(serial)
 				if _, ok := deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[serial]; !ok {
 					return false
 				}
 				if deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[serial] != testVolumeID {
+					fmt.Println(deviceSymlinkPath)
+					fmt.Println(deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[serial])
+					fmt.Println(serial)
 					return false
 				}
 				return true
