@@ -90,6 +90,8 @@ var _ = Describe("Device Serial Cache Test", func() {
 			err = testutil.RemoveDeviceSymlinkForVolumeID(testVolumeID, "/dev", DevDiskIDPath, models.BusVIRTIO)
 			Expect(err).Should(BeNil())
 			Eventually(func() bool {
+				deviceSerialCacheInstance.rLock.Lock()
+				defer deviceSerialCacheInstance.rLock.Unlock()
 				if len(deviceSerialCacheInstance.serialPrefixToDeviceCacheMap) == 0 {
 					return true
 				}

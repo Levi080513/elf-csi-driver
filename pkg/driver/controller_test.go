@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"k8s.io/klog/v2"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/mock/gomock"
@@ -16,14 +17,12 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/openlyinc/pointy"
 	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
-	kmetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/klog/v2"
-
 	"github.com/smartxworks/elf-csi-driver/pkg/feature"
 	"github.com/smartxworks/elf-csi-driver/pkg/service"
 	"github.com/smartxworks/elf-csi-driver/pkg/service/mock_services"
 	testutil "github.com/smartxworks/elf-csi-driver/pkg/testing/utils"
 	"github.com/smartxworks/elf-csi-driver/pkg/utils"
+	kmetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -75,11 +74,7 @@ var _ = Describe("CSI Driver Controller Test", func() {
 	Expect(err).To(BeNil())
 
 	BeforeEach(func() {
-		mockCtrl = gomock.NewController(GinkgoT())
-		mockTowerService = mock_services.NewMockTowerService(mockCtrl)
-		config.TowerClient = mockTowerService
-		driver = newControllerServer(config)
-
+		klog.InitFlags(nil)
 		// set log
 		if err := flag.Set("logtostderr", "false"); err != nil {
 			_ = fmt.Errorf("Error setting logtostderr flag")
@@ -87,6 +82,11 @@ var _ = Describe("CSI Driver Controller Test", func() {
 
 		logBuffer = new(bytes.Buffer)
 		klog.SetOutput(logBuffer)
+
+		mockCtrl = gomock.NewController(GinkgoT())
+		mockTowerService = mock_services.NewMockTowerService(mockCtrl)
+		config.TowerClient = mockTowerService
+		driver = newControllerServer(config)
 	})
 
 	AfterSuite(func() {
@@ -283,10 +283,11 @@ var _ = Describe("CSI Driver Controller Test", func() {
 			addVMDiskTask.Status = &taskStatusSuccess
 			controllerPublishVolumeRequest := testutil.NewControllerPublishVolumeRequest(*volume.ID, *vm.ID, false)
 
+			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{}).Return(nil, nil)
 			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return(nil, nil).AnyTimes()
 			mockTowerService.EXPECT().GetVM(*vm.Name).Return(vm, nil)
 			mockTowerService.EXPECT().GetVMVolumesByID([]string{*volume.ID}).Return([]*models.VMVolume{volume}, nil)
-			mockTowerService.EXPECT().AddVMDisks(*vm.Name, []string{*volume.ID}, models.BusSCSI).Return(addVMDiskTask, nil)
+			mockTowerService.EXPECT().AddVMDisks(*vm.Name, []string{*volume.ID}, models.BusVIRTIO).Return(addVMDiskTask, nil)
 			mockTowerService.EXPECT().GetTask(*addVMDiskTask.ID).Return(addVMDiskTask, nil)
 
 			_, err := driver.ControllerPublishVolume(ctx, controllerPublishVolumeRequest)
@@ -302,6 +303,7 @@ var _ = Describe("CSI Driver Controller Test", func() {
 			addVMDiskTask.Status = &taskStatusSuccess
 			controllerPublishVolumeRequest := testutil.NewControllerPublishVolumeRequest(*volume.ID, *vm.ID, false)
 
+			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{}).Return(nil, nil)
 			mockTowerService.EXPECT().GetVMDisks(*vm.Name, []string{*volume.ID}).Return(nil, nil).AnyTimes()
 			mockTowerService.EXPECT().GetVM(*vm.Name).Return(vm, nil)
 			mockTowerService.EXPECT().GetVMVolumesByID([]string{*volume.ID}).Return([]*models.VMVolume{volume}, nil)
