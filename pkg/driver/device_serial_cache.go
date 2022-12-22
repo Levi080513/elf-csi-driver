@@ -197,7 +197,7 @@ func (n *deviceSerialCache) AddDeviceToSerialCache(deviceSymlink string) error {
 
 		n.serialPrefixToSCSISerialPrefixCacheMap[serial] = scsiSerial
 	}
-
+	fmt.Println(n.serialPrefixToDeviceCacheMap)
 	return nil
 }
 
@@ -207,22 +207,13 @@ func (n *deviceSerialCache) RemoveDeviceFromSerialCache(deviceSymlink string) er
 
 	if isDeviceInVIRTIOBus(deviceSymlink) {
 		serialPrefix := strings.Split(deviceSymlink, symlinkPrefixForAttachedVIRTIOBus)[1]
-		fmt.Println(serialPrefix)
-		fmt.Println(n.serialPrefixToDeviceCacheMap)
 		delete(n.serialPrefixToDeviceCacheMap, serialPrefix)
-		fmt.Println(len(n.serialPrefixToDeviceCacheMap))
-		fmt.Println(n.serialPrefixToDeviceCacheMap)
 	}
 
 	if isDeviceInSCSIBus(deviceSymlink) {
 		serialPrefix := strings.Split(deviceSymlink, symlinkPrefixForAttachedSCSIBus)[1]
-		fmt.Println(serialPrefix)
-		fmt.Println(n.serialPrefixToDeviceCacheMap)
 		delete(n.serialPrefixToDeviceCacheMap, serialPrefix)
 		delete(n.serialPrefixToSCSISerialPrefixCacheMap, serialPrefix)
-		fmt.Println(len(n.serialPrefixToDeviceCacheMap))
-		fmt.Println(len(n.serialPrefixToSCSISerialPrefixCacheMap))
-		fmt.Println(n.serialPrefixToDeviceCacheMap)
 	}
 
 	return nil

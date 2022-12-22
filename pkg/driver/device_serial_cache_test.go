@@ -1,7 +1,6 @@
 package driver
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
@@ -79,7 +78,6 @@ var _ = Describe("Device Serial Cache Test", func() {
 				if deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[serial] != testVolumeID {
 					return false
 				}
-				fmt.Println(len(deviceSerialCacheInstance.serialPrefixToDeviceCacheMap))
 				return true
 			}, timeout).Should(BeTrue())
 
@@ -88,7 +86,6 @@ var _ = Describe("Device Serial Cache Test", func() {
 			Eventually(func() bool {
 				deviceSerialCacheInstance.rLock.Lock()
 				defer deviceSerialCacheInstance.rLock.Unlock()
-				fmt.Println(len(deviceSerialCacheInstance.serialPrefixToDeviceCacheMap))
 				if _, ok := deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[testVolumeID]; ok {
 					return false
 				}
@@ -111,7 +108,7 @@ var _ = Describe("Device Serial Cache Test", func() {
 				if _, ok := deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[testVolumeID]; ok {
 					return false
 				}
-				return false
+				return true
 			}, timeout).Should(BeTrue())
 		})
 	})
