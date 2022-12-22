@@ -51,9 +51,6 @@ var _ = Describe("Device Serial Cache Test", func() {
 			Eventually(func() bool {
 				deviceSerialCacheInstance.rLock.Lock()
 				defer deviceSerialCacheInstance.rLock.Unlock()
-				if len(deviceSerialCacheInstance.serialPrefixToDeviceCacheMap) == 0 {
-					return false
-				}
 				serial := strings.Split(deviceSymlinkPath, symlinkPrefixForAttachedVIRTIOBus)[1]
 				if _, ok := deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[serial]; !ok {
 					return false
@@ -74,9 +71,6 @@ var _ = Describe("Device Serial Cache Test", func() {
 			Eventually(func() bool {
 				deviceSerialCacheInstance.rLock.Lock()
 				defer deviceSerialCacheInstance.rLock.Unlock()
-				if len(deviceSerialCacheInstance.serialPrefixToDeviceCacheMap) == 0 {
-					return false
-				}
 				serial := strings.Split(deviceSymlinkPath, symlinkPrefixForAttachedVIRTIOBus)[1]
 				if _, ok := deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[serial]; !ok {
 					return false
@@ -92,8 +86,8 @@ var _ = Describe("Device Serial Cache Test", func() {
 			Eventually(func() bool {
 				deviceSerialCacheInstance.rLock.Lock()
 				defer deviceSerialCacheInstance.rLock.Unlock()
-				if len(deviceSerialCacheInstance.serialPrefixToDeviceCacheMap) == 0 {
-					return true
+				if _, ok := deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[testVolumeID]; ok {
+					return false
 				}
 				return false
 			}, time.Second, timeout).Should(BeTrue())
@@ -111,8 +105,8 @@ var _ = Describe("Device Serial Cache Test", func() {
 			Eventually(func() bool {
 				deviceSerialCacheInstance.rLock.Lock()
 				defer deviceSerialCacheInstance.rLock.Unlock()
-				if len(deviceSerialCacheInstance.serialPrefixToDeviceCacheMap) == 0 {
-					return true
+				if _, ok := deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[testVolumeID]; ok {
+					return false
 				}
 				return false
 			}, time.Second, timeout).Should(BeTrue())
