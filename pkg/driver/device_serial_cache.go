@@ -41,6 +41,8 @@ type deviceSerialCache struct {
 	rLock sync.RWMutex
 
 	osUtil utils.OsUtil
+
+	name string
 }
 
 func NewDeviceSerialCache(config *DriverConfig) *deviceSerialCache {
@@ -198,7 +200,7 @@ func (n *deviceSerialCache) AddDeviceToSerialCache(deviceSymlink string) error {
 		n.serialPrefixToSCSISerialPrefixCacheMap[serial] = scsiSerial
 	}
 	fmt.Println(n.serialPrefixToDeviceCacheMap)
-	fmt.Println(&n)
+	fmt.Println(n.name)
 	return nil
 }
 

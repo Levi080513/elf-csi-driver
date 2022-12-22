@@ -33,6 +33,7 @@ var _ = Describe("Device Serial Cache Test", func() {
 		}
 
 		deviceSerialCacheInstance = NewDeviceSerialCache(config)
+		deviceSerialCacheInstance.name = "cache test"
 		deviceSerialCacheInstance.Run(stopCh)
 
 		testVolumeID = uuid.New().String()
