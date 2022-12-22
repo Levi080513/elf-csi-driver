@@ -4,12 +4,9 @@
 package driver
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
-	"k8s.io/klog/v2"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/mock/gomock"
@@ -17,12 +14,13 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/openlyinc/pointy"
 	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
+	kmetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"github.com/smartxworks/elf-csi-driver/pkg/feature"
 	"github.com/smartxworks/elf-csi-driver/pkg/service"
 	"github.com/smartxworks/elf-csi-driver/pkg/service/mock_services"
 	testutil "github.com/smartxworks/elf-csi-driver/pkg/testing/utils"
 	"github.com/smartxworks/elf-csi-driver/pkg/utils"
-	kmetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -41,7 +39,6 @@ var _ = Describe("CSI Driver Controller Test", func() {
 		mockTowerService *mock_services.MockTowerService
 		config           *DriverConfig
 		vm               *models.VM
-		logBuffer        *bytes.Buffer
 	)
 
 	vm = testutil.NewVM()
@@ -74,15 +71,6 @@ var _ = Describe("CSI Driver Controller Test", func() {
 	Expect(err).To(BeNil())
 
 	BeforeEach(func() {
-		klog.InitFlags(nil)
-		// set log
-		if err := flag.Set("logtostderr", "false"); err != nil {
-			_ = fmt.Errorf("Error setting logtostderr flag")
-		}
-
-		logBuffer = new(bytes.Buffer)
-		klog.SetOutput(logBuffer)
-
 		mockCtrl = gomock.NewController(GinkgoT())
 		mockTowerService = mock_services.NewMockTowerService(mockCtrl)
 		config.TowerClient = mockTowerService
@@ -210,7 +198,6 @@ var _ = Describe("CSI Driver Controller Test", func() {
 
 			_, err := driver.ControllerPublishVolume(ctx, controllerPublishVolumeRequest)
 			Expect(err).To(BeNil())
-			Expect(logBuffer.String()).Should(ContainSubstring("already published in VM"))
 		})
 
 		It("it should remove volume in attachVolumeList when volume has published to VM", func() {
@@ -271,7 +258,6 @@ var _ = Describe("CSI Driver Controller Test", func() {
 
 			_, err := driver.ControllerPublishVolume(ctx, controllerPublishVolumeRequest)
 			Expect(err.Error()).Should(ContainSubstring("VM Disk is not found"))
-			Expect(logBuffer.String()).Should(ContainSubstring("still attached to another vm"))
 		})
 
 		It("it should return nil when volume is sharing and mounted on other VM", func() {
@@ -292,7 +278,6 @@ var _ = Describe("CSI Driver Controller Test", func() {
 
 			_, err := driver.ControllerPublishVolume(ctx, controllerPublishVolumeRequest)
 			Expect(err).To(BeNil())
-			Expect(logBuffer.String()).Should(ContainSubstring("was already attached"))
 		})
 
 		It("it should return nil when volume is not sharing and has not mounted on other VM", func() {
