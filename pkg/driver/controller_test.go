@@ -62,10 +62,11 @@ var _ = Describe("CSI Driver Controller Test", func() {
 	Expect(err).To(BeNil())
 
 	config = &DriverConfig{
-		TowerClient:  mockTowerService,
-		ClusterID:    TestClusterID,
-		LivenessPort: 9411,
-		NodeMap:      nm,
+		TowerClient:            mockTowerService,
+		ClusterID:              TestClusterID,
+		LivenessPort:           9411,
+		NodeMap:                nm,
+		PreferredVolumeBusType: string(models.BusVIRTIO),
 	}
 
 	// start node liveness server
@@ -79,7 +80,11 @@ var _ = Describe("CSI Driver Controller Test", func() {
 		config.TowerClient = mockTowerService
 		driver = newControllerServer(config)
 
-		_ = flag.Set("logtostderr", "false")
+		// set log
+		if err := flag.Set("logtostderr", "false"); err != nil {
+			_ = fmt.Errorf("Error setting logtostderr flag")
+		}
+
 		logBuffer = new(bytes.Buffer)
 		klog.SetOutput(logBuffer)
 	})

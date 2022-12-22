@@ -49,6 +49,8 @@ var _ = Describe("Device Serial Cache Test", func() {
 			Expect(err).Should(BeNil())
 
 			Eventually(func() bool {
+				deviceSerialCacheInstance.rLock.Lock()
+				defer deviceSerialCacheInstance.rLock.Unlock()
 				if len(deviceSerialCacheInstance.serialPrefixToDeviceCacheMap) == 0 {
 					return false
 				}
@@ -70,6 +72,8 @@ var _ = Describe("Device Serial Cache Test", func() {
 			Expect(err).Should(BeNil())
 
 			Eventually(func() bool {
+				deviceSerialCacheInstance.rLock.Lock()
+				defer deviceSerialCacheInstance.rLock.Unlock()
 				if len(deviceSerialCacheInstance.serialPrefixToDeviceCacheMap) == 0 {
 					return false
 				}
@@ -103,6 +107,8 @@ var _ = Describe("Device Serial Cache Test", func() {
 			Expect(err).Should(BeNil())
 
 			Eventually(func() bool {
+				deviceSerialCacheInstance.rLock.Lock()
+				defer deviceSerialCacheInstance.rLock.Unlock()
 				if len(deviceSerialCacheInstance.serialPrefixToDeviceCacheMap) == 0 {
 					return true
 				}
