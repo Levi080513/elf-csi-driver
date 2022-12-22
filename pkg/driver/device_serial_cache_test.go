@@ -1,6 +1,7 @@
 package driver
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -52,6 +53,8 @@ var _ = Describe("Device Serial Cache Test", func() {
 				deviceSerialCacheInstance.rLock.Lock()
 				defer deviceSerialCacheInstance.rLock.Unlock()
 				serial := strings.Split(deviceSymlinkPath, symlinkPrefixForAttachedVIRTIOBus)[1]
+				fmt.Println(deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[serial])
+				fmt.Println(serial)
 				if _, ok := deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[serial]; !ok {
 					return false
 				}
