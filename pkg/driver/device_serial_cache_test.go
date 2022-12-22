@@ -52,8 +52,10 @@ var _ = Describe("Device Serial Cache Test", func() {
 				deviceSerialCacheInstance.rLock.Lock()
 				defer deviceSerialCacheInstance.rLock.Unlock()
 				serial := strings.Split(deviceSymlinkPath, symlinkPrefixForAttachedVIRTIOBus)[1]
-				fmt.Println(serial)
+
 				if _, ok := deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[serial]; !ok {
+					fmt.Println(serial)
+					fmt.Println(deviceSerialCacheInstance.serialPrefixToDeviceCacheMap)
 					return false
 				}
 				if deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[serial] != testVolumeID {
