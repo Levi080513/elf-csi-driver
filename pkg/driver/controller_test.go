@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"k8s.io/klog"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/mock/gomock"
@@ -17,6 +16,7 @@ import (
 	"github.com/openlyinc/pointy"
 	"github.com/smartxworks/cloudtower-go-sdk/v2/models"
 	kmetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog/v2"
 
 	"github.com/smartxworks/elf-csi-driver/pkg/feature"
 	"github.com/smartxworks/elf-csi-driver/pkg/service"
