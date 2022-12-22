@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -77,6 +78,8 @@ var _ = Describe("CSI Driver Controller Test", func() {
 		mockTowerService = mock_services.NewMockTowerService(mockCtrl)
 		config.TowerClient = mockTowerService
 		driver = newControllerServer(config)
+
+		_ = flag.Set("logtostderr", "false")
 		logBuffer = new(bytes.Buffer)
 		klog.SetOutput(logBuffer)
 	})
