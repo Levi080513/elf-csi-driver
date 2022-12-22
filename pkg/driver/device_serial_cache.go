@@ -198,6 +198,7 @@ func (n *deviceSerialCache) AddDeviceToSerialCache(deviceSymlink string) error {
 		n.serialPrefixToSCSISerialPrefixCacheMap[serial] = scsiSerial
 	}
 	fmt.Println(n.serialPrefixToDeviceCacheMap)
+	fmt.Println(&n)
 	return nil
 }
 
