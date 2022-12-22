@@ -210,6 +210,8 @@ func (n *deviceSerialCache) RemoveDeviceFromSerialCache(deviceSymlink string) er
 		fmt.Println(serialPrefix)
 		fmt.Println(n.serialPrefixToDeviceCacheMap)
 		delete(n.serialPrefixToDeviceCacheMap, serialPrefix)
+		fmt.Println(len(n.serialPrefixToDeviceCacheMap))
+		fmt.Println(n.serialPrefixToDeviceCacheMap)
 	}
 
 	if isDeviceInSCSIBus(deviceSymlink) {
@@ -218,6 +220,9 @@ func (n *deviceSerialCache) RemoveDeviceFromSerialCache(deviceSymlink string) er
 		fmt.Println(n.serialPrefixToDeviceCacheMap)
 		delete(n.serialPrefixToDeviceCacheMap, serialPrefix)
 		delete(n.serialPrefixToSCSISerialPrefixCacheMap, serialPrefix)
+		fmt.Println(len(n.serialPrefixToDeviceCacheMap))
+		fmt.Println(len(n.serialPrefixToSCSISerialPrefixCacheMap))
+		fmt.Println(n.serialPrefixToDeviceCacheMap)
 	}
 
 	return nil
