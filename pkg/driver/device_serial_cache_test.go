@@ -57,6 +57,8 @@ var _ = Describe("Device Serial Cache Test", func() {
 					return false
 				}
 				if deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[serial] != testVolumeID {
+					fmt.Println(testVolumeID == deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[serial])
+					fmt.Println(testVolumeID)
 					fmt.Println(deviceSymlinkPath)
 					fmt.Println(deviceSerialCacheInstance.serialPrefixToDeviceCacheMap[serial])
 					fmt.Println(serial)
